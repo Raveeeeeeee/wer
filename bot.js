@@ -97,6 +97,9 @@ async function initializeBot() {
     console.log("✓ Loaded admin list:", ADMIN_IDS);
   }
   
+  data.setGlobalAdmins(ADMIN_IDS, [DEVELOPER_ID, SUPER_ADMIN_ID]);
+  console.log("✓ Global admins and protected users set in DataManager");
+  
   const loginOptions = {
     forceLogin: true,
     userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
@@ -810,21 +813,38 @@ async function checkForVulgarWords(threadID, messageID, senderID, message, event
   
   const keywords = data.getWarningKeywords(threadID);
   const normalizedMessage = normalizeForDetection(message);
+  const normalizedMessageNoSpaces = normalizedMessage.replace(/\s+/g, '');
   const originalWords = extractOriginalWords(message);
   
   for (const keyword of keywords) {
     const normalizedKeyword = normalizeForDetection(keyword);
     const flexPattern = createFlexiblePattern(normalizedKeyword);
     
-    if (matchFlexibleKeyword(normalizedMessage, normalizedKeyword, flexPattern)) {
+    let matchedInNormal = matchFlexibleKeyword(normalizedMessage, normalizedKeyword, flexPattern);
+    let matchedInCompact = matchFlexibleKeyword(normalizedMessageNoSpaces, normalizedKeyword, flexPattern);
+    
+    if (matchedInNormal || matchedInCompact) {
       let hasActualVulgarWord = originalWords.some(word => {
+        const normalizedWord = normalizeForDetection(word);
+        return normalizedWord === normalizedKeyword && !isSafeWord(word);
+      });
+      
+      const originalMessageNoSpaces = message.replace(/\s+/g, '');
+      const wordsFromCompact = extractOriginalWords(originalMessageNoSpaces);
+      let hasActualVulgarWordInCompact = wordsFromCompact.some(word => {
         const normalizedWord = normalizeForDetection(word);
         return normalizedWord === normalizedKeyword && !isSafeWord(word);
       });
       
       let hasOnlySafeWords = originalWords.every(word => isSafeWord(word) || word.length === 0);
       
-      if (hasOnlySafeWords || !hasActualVulgarWord) {
+      if (matchedInCompact && !matchedInNormal) {
+        console.log(`🚨 Detected space-bypass attempt: "${message}" → "${normalizedMessageNoSpaces}" matches "${keyword}"`);
+        await issueWarning(threadID, messageID, senderID, event, `Used vulgar word (space-bypass detected): "${keyword}"`);
+        return;
+      }
+      
+      if (hasOnlySafeWords || (!hasActualVulgarWord && !hasActualVulgarWordInCompact)) {
         console.log(`✓ Skipping false positive: "${message}" matched "${keyword}" but only contains safe words`);
         continue;
       }
@@ -839,12 +859,19 @@ async function checkForVulgarWords(threadID, messageID, senderID, message, event
     
     if (isBump) {
       const normalizedRepliedMessage = normalizeForDetection(event.messageReply.body);
+      const normalizedRepliedMessageNoSpaces = normalizedRepliedMessage.replace(/\s+/g, '');
       
       for (const keyword of keywords) {
         const normalizedKeyword = normalizeForDetection(keyword);
         const flexPattern = createFlexiblePattern(normalizedKeyword);
         
-        if (matchFlexibleKeyword(normalizedRepliedMessage, normalizedKeyword, flexPattern)) {
+        let matchedInNormal = matchFlexibleKeyword(normalizedRepliedMessage, normalizedKeyword, flexPattern);
+        let matchedInCompact = matchFlexibleKeyword(normalizedRepliedMessageNoSpaces, normalizedKeyword, flexPattern);
+        
+        if (matchedInNormal || matchedInCompact) {
+          if (matchedInCompact && !matchedInNormal) {
+            console.log(`🚨 Detected space-bypass in bumped message: "${event.messageReply.body}"`);
+          }
           await issueWarning(threadID, messageID, senderID, event, `Bumped a message with vulgar word: "${keyword}"`);
           return;
         }
@@ -868,13 +895,20 @@ async function checkForVulgarWords(threadID, messageID, senderID, message, event
   
   if (recentMessages.length > 1) {
     const combinedMessage = recentMessages.map(h => h.message).join('');
+    const combinedMessageNoSpaces = combinedMessage.replace(/\s+/g, '');
     const combinedOriginalText = recentMessages.map(h => h.originalText).join(' ');
     
     for (const keyword of keywords) {
       const normalizedKeyword = normalizeForDetection(keyword);
       const flexPattern = createFlexiblePattern(normalizedKeyword);
       
-      if (matchFlexibleKeyword(combinedMessage, normalizedKeyword, flexPattern)) {
+      let matchedInNormal = matchFlexibleKeyword(combinedMessage, normalizedKeyword, flexPattern);
+      let matchedInCompact = matchFlexibleKeyword(combinedMessageNoSpaces, normalizedKeyword, flexPattern);
+      
+      if (matchedInNormal || matchedInCompact) {
+        if (matchedInCompact && !matchedInNormal) {
+          console.log(`🚨 Detected space-bypass across messages: "${combinedOriginalText.substring(0, 50)}..."`);
+        }
         await issueWarning(threadID, messageID, senderID, event, `Used vulgar word across multiple messages: "${keyword}" (Combined: "${combinedOriginalText.substring(0, 50)}...")`);
         userMessageHistory.delete(historyKey);
         return;
@@ -1019,6 +1053,11 @@ const SAFE_WORDS = [
 
 function isSafeWord(word) {
   const cleanWord = word.toLowerCase().trim().replace(/[^a-z]/gi, '');
+  
+  if (COMMON_SAFE_WORDS.has(cleanWord)) {
+    return true;
+  }
+  
   return SAFE_WORDS.some(safeWord => {
     return cleanWord === safeWord || 
            cleanWord === safeWord + 's' ||
@@ -1985,6 +2024,7 @@ async function handleKickCommand(threadID, messageID, senderID, event) {
           sendMessage(threadID, `❌ Failed to kick ${nickname}. Please try again or remove manually.`, messageID);
         } else {
           const kickCount = data.incrementKickCount(threadID, targetUserID);
+          data.removeMember(threadID, targetUserID);
           console.log(`✅ Kicked ${nickname} from group ${threadID} (kick count: ${kickCount})`);
         }
       });
@@ -2034,6 +2074,8 @@ async function handleAddAdminCommand(threadID, messageID, senderID, event) {
     return;
   }
   
+  data.setGlobalAdmins(ADMIN_IDS, [DEVELOPER_ID, SUPER_ADMIN_ID]);
+  
   console.log(`✅ ${nickname} (${targetUserID}) has been added as admin in thread ${threadID}`);
   sendMessage(threadID, `✅ ${nickname} has been promoted to admin in this group!\n\nUID: ${targetUserID}`, messageID);
 }
@@ -2079,6 +2121,8 @@ async function handleRemoveAdminCommand(threadID, messageID, senderID, event) {
     sendMessage(threadID, `❌ ${nickname} is not an admin in this group!`, messageID);
     return;
   }
+  
+  data.setGlobalAdmins(ADMIN_IDS, [DEVELOPER_ID, SUPER_ADMIN_ID]);
   
   console.log(`✅ ${nickname} (${targetUserID}) has been removed as admin in thread ${threadID}`);
   sendMessage(threadID, `✅ ${nickname} has been removed as admin in this group.\n\nUID: ${targetUserID}`, messageID);
@@ -2942,6 +2986,11 @@ async function checkAttendanceOnStartup() {
         
         for (const member of attendance.members) {
           if (!member.consecutiveAbsences || member.consecutiveAbsences < 3) {
+            continue;
+          }
+          
+          if (isAdmin(threadID, member.userID)) {
+            console.log(`✓ Skipping admin ${member.nickname} (${member.userID}) from attendance check`);
             continue;
           }
           
