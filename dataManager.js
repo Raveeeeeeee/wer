@@ -14,6 +14,9 @@ class DataManager {
     this.serverInfoFile = path.join(this.dataDir, "serverInfo.json");
     this.warExtremeFile = path.join(this.dataDir, "warExtreme.json");
     this.banCountFile = path.join(this.dataDir, "banCount.json");
+    this.fakeWarningsFile = path.join(this.dataDir, "fakeWarnings.json");
+    this.kickCountFile = path.join(this.dataDir, "kickCount.json");
+    this.memberJoinDatesFile = path.join(this.dataDir, "memberJoinDates.json");
     
     this.ensureDataDir();
     this.greetings = this.loadJSON(this.greetingsFile, {});
@@ -28,6 +31,9 @@ class DataManager {
     this.serverInfo = this.loadJSON(this.serverInfoFile, {});
     this.warExtreme = this.loadJSON(this.warExtremeFile, {});
     this.banCount = this.loadJSON(this.banCountFile, {});
+    this.fakeWarnings = this.loadJSON(this.fakeWarningsFile, {});
+    this.kickCount = this.loadJSON(this.kickCountFile, {});
+    this.memberJoinDates = this.loadJSON(this.memberJoinDatesFile, {});
     
     this.messageCache = new Map();
   }
@@ -413,10 +419,31 @@ class DataManager {
     }
 
     const warningKey = this.generateWarningKey();
-    const existingWarning = this.warnings[threadID][userID].reasons.find(r => r.messageID === messageID && messageID !== null);
+    const now = new Date();
+    const phTime = now.toLocaleString('en-US', { 
+      timeZone: 'Asia/Manila',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: false
+    });
+    const timestamp = now.getTime();
+    
+    const existingWarning = this.warnings[threadID][userID].reasons.find(r => {
+      if (messageID && r.messageID === messageID) {
+        return true;
+      }
+      if (r.timestamp && Math.abs(timestamp - r.timestamp) < 2000) {
+        return true;
+      }
+      return false;
+    });
     
     if (existingWarning) {
-      console.log(`⚠️ Duplicate warning detected for message ${messageID}, skipping...`);
+      console.log(`⚠️ Duplicate warning detected (messageID: ${messageID}, timestamp: ${phTime}), skipping...`);
       return this.warnings[threadID][userID].count;
     }
 
@@ -424,13 +451,14 @@ class DataManager {
     this.warnings[threadID][userID].reasons.push({
       key: warningKey,
       reason,
-      date: new Date().toISOString(),
+      date: phTime,
+      timestamp: timestamp,
       messageID: messageID,
       permanent: isPermanent || false
     });
     
     if (isPermanent) {
-      console.log(`🔒 Permanent warning added for user ${userID}`);
+      console.log(`🔒 Permanent warning added for user ${userID} at ${phTime}`);
     }
     
     this.warnings[threadID][userID].nickname = nickname;
@@ -814,6 +842,91 @@ class DataManager {
     this.saveJSON(this.warningsFile, this.warnings);
     
     return { count };
+  }
+
+  isFakeWarningEnabled(threadID) {
+    return this.fakeWarnings[threadID]?.enabled === true;
+  }
+
+  toggleFakeWarning(threadID) {
+    if (!this.fakeWarnings[threadID]) {
+      this.fakeWarnings[threadID] = { enabled: false, monthlyCount: 0, lastReset: new Date().toISOString() };
+    }
+    this.fakeWarnings[threadID].enabled = !this.fakeWarnings[threadID].enabled;
+    this.saveJSON(this.fakeWarningsFile, this.fakeWarnings);
+    return this.fakeWarnings[threadID].enabled;
+  }
+
+  canSendFakeWarning(threadID) {
+    if (!this.fakeWarnings[threadID]) {
+      this.fakeWarnings[threadID] = { enabled: false, monthlyCount: 0, lastReset: new Date().toISOString() };
+      this.saveJSON(this.fakeWarningsFile, this.fakeWarnings);
+    }
+    
+    const now = new Date();
+    const lastReset = new Date(this.fakeWarnings[threadID].lastReset);
+    
+    if (now.getMonth() !== lastReset.getMonth() || now.getFullYear() !== lastReset.getFullYear()) {
+      this.fakeWarnings[threadID].monthlyCount = 0;
+      this.fakeWarnings[threadID].lastReset = now.toISOString();
+      this.saveJSON(this.fakeWarningsFile, this.fakeWarnings);
+    }
+    
+    return this.fakeWarnings[threadID].monthlyCount < 2;
+  }
+
+  recordFakeWarning(threadID, messageID) {
+    if (!this.fakeWarnings[threadID]) {
+      this.fakeWarnings[threadID] = { enabled: false, monthlyCount: 0, lastReset: new Date().toISOString(), pending: {} };
+    }
+    if (!this.fakeWarnings[threadID].pending) {
+      this.fakeWarnings[threadID].pending = {};
+    }
+    this.fakeWarnings[threadID].monthlyCount++;
+    this.fakeWarnings[threadID].pending[messageID] = Date.now();
+    this.saveJSON(this.fakeWarningsFile, this.fakeWarnings);
+  }
+
+  isFakeWarningMessage(threadID, messageID) {
+    if (!this.fakeWarnings[threadID] || !this.fakeWarnings[threadID].pending) {
+      return false;
+    }
+    return this.fakeWarnings[threadID].pending[messageID] !== undefined;
+  }
+
+  removeFakeWarningMessage(threadID, messageID) {
+    if (this.fakeWarnings[threadID] && this.fakeWarnings[threadID].pending) {
+      delete this.fakeWarnings[threadID].pending[messageID];
+      this.saveJSON(this.fakeWarningsFile, this.fakeWarnings);
+    }
+  }
+
+  incrementKickCount(threadID, userID) {
+    const key = `${threadID}_${userID}`;
+    if (!this.kickCount[key]) {
+      this.kickCount[key] = 0;
+    }
+    this.kickCount[key]++;
+    this.saveJSON(this.kickCountFile, this.kickCount);
+    return this.kickCount[key];
+  }
+
+  getKickCount(threadID, userID) {
+    const key = `${threadID}_${userID}`;
+    return this.kickCount[key] || 0;
+  }
+
+  setMemberJoinDate(threadID, userID, date) {
+    const key = `${threadID}_${userID}`;
+    if (!this.memberJoinDates[key]) {
+      this.memberJoinDates[key] = date || new Date().toISOString();
+      this.saveJSON(this.memberJoinDatesFile, this.memberJoinDates);
+    }
+  }
+
+  getMemberJoinDate(threadID, userID) {
+    const key = `${threadID}_${userID}`;
+    return this.memberJoinDates[key];
   }
 }
 
