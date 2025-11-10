@@ -1,0 +1,26 @@
+Adjustment for the obfuscation system: when a user types (fuck-you, tang-ina-mo, potangina-mo) these vulgar words can bypass the vulgarity system of the bot, fix this flaw for every warning words or vulgar words.
+another thing is when the user types a word in a different message in order to bypass the obfuscation system, for example is the user types "tang" and the second message sent is "inamo", this makes "tang ina mo" in a one message in tagalog language which is a vulgar word, but bypassed because it is seperatedly sent by the user, do this in all warning words or vulgar words, fix this flaws
+
+when someone gets unbanned, their recent ban record should retain so that if they get banned again then the ban should be 7 days or permanent ban.
+
+the message "Uy may lumipad HAHAHA" should be seperated from the ban message because it is in the message of the ban announcement of a user.
+Also add "Goodboy ka next time ha HAHA 😂😂"
+
+Also in vulgarity detection, if a user mention 61572200383571 (Tanginamo Pabayo) then that user should also gets banned, the mentioning of the Bot name bypasses the vulgarity detection, therfore it should be fixed
+
+in attendance, why is Von (100092567839096) a super admin is in the list of attendance, he should not be there cause he is an super admin... all of the admin and super admin should not be in the list of attendance and attendance list of missed attendance fix it. Also in attendance, use the nicknames of all the group members, not their names in facebook, if no nickname is set the after their name it should have (Please apply Gamer Tag/Nick Name)
+
+eg. user (Please apply Gamer Tag/Nick Name)
+
+also when someone spams unsent and the bot keeps showing the unsent messages of the user, the bot will kick the user with a reason of "spamming unsent messages" and after a 3 times of being kicked then that user should be banned with a reason of 3 consecutives kicked by the system. this should not have a list or command but have a data stored so that  the bot will identify whoever gets kicked 3 times by the bot because of spamming, make this just a functionality.
+
+When a new user gets added to a group, then the bot should personaly message the super admin (100092567839096) stating the following:
+
+The name
+The new user UID
+the new user Account creation date
+the new user personal info if it is public.
+
+Everytime after the bots get booted up or restarted or whenever it gets run, the bot should look for any vulgar words it didn't detected because the bot is offline or stopped, it should only detect the words that has been missed by the bot not the already recorded vulgar words to avoid duplication of any warning of a user. THIS SHOULD GET IMPLEMENTED IMMEDIATELY OR AFTER THE BOT GETS BOOTED UP
+
+do not run the bot, I will run in a VPS not here in replit.

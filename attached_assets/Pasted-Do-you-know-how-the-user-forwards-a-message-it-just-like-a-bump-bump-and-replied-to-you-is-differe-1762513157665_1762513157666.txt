@@ -1,0 +1,19 @@
+Do you know how the user forwards a message? it just like a bump, bump and replied to you is different and I want you to fix it because if someone replied to a vulgar words "replied to..." They will be warned but I want to happens if the user bump the vulgar word "Bumped [name] message" then they will be warned.
+
+also add that SUPER ADMIN and DEVELOPER can warning the admins if they did something wrong using .warning @mention, and this warning cannot be deleted or unwarned by .unwarning or .unwarning me command.
+
+Also checks for the moderation function like, Spam protection, obfuscation protection, the fail safe, the anti make admin for group chat, and vulgarity detection if they are smoothly coded and no flaws or errors.
+
+I think the sperated bypassing of vulgar words "Message 1 of the user: tang, message 2 of the same user: ina" is still not patched and fix cause some group members can still do it.
+
+make the message scan range 500 messages. And make sure the anti duplication for warning is working so that no duplicate warning will happen. Exclude the admins, super admin, and the developer .addwarning in the scanning remember that, and also exclude them from the scanning
+
+add admins in admin.json:
+100043486073592
+61559295856089
+100077492469494
+
+and add this words in warning words or warningKeywords.json:
+
+nigga, nigger, negro, neggro, shit, ass, fuck, cunt, cum, tamod, etit, tits, booty, boobies, boobs, clitoris, posi, possy, pussy, dick, dih, dik, tangina, tanginamo, potanginamo, potangina, potang ina mo, potang inamo, tang ina mo, tangina mo, tanga, bobo, tite, betlog, pepe, rape, iyot, kantot, kantowt, kantutin, kantotin, porn, bold, gago, ogag, burat, o10, oten, king ina, kingina, king ina mo, kingina mo, cunt, cum, tamod, sex, xes, s*x, x*s, mf, mother fucker, motherfucker, fuckass, fuck, fack, fuck you, fack you, pakU, pak u, pakyu, eyot, bayo, tete, teti, epep, kantut, totkan, tutkan, shit, betch, bitch, bxtch, btch, bold, fck, boobs, iyut
+

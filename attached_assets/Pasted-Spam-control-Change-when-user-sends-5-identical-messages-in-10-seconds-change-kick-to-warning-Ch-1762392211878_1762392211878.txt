@@ -1,0 +1,20 @@
+Spam control:
+Change when user sends 5 identical messages in 10 seconds, change kick to warning
+Change when user sends 5 invalid commands in 10 seconds, change kick to warning
+Change when user keep unsend messages, change kick to warning
+
+Change the bot range message scanning from 500 to 2000, and when it scans for vulgar words while the bot got offline, make sure the bot will not duplicate any already warned words to avoid warning duplication, also another thing is this function is detecting the badwords in addwarning command (.addwarning [badwords]) making the admin or the super admin be kicked in the group chat. Fix these flaws not.
+
+in addition to the warning function, every warning the bot will create a unique short key for that specific warning, so that duplication of warning can be avoided. this will be helpful for the next changes.
+
+Change the bot range message scanning from 500 to 2000, and when it scans for vulgar words while the bot got offline, make sure the bot will not duplicate any already warned words using the unique keys to avoid warning duplication.. so when a specific date or time, or key is detected then the warning word will not be considered since it is already recorded. detected, and warned the user, also another thing is this function is detecting the badwords in addwarning command (.addwarning [badwords]) making the admin or the super admin be kicked in the group chat. Fix these flaws not.
+
+Create a fail safe mechanism, when the super admin got kicked (100092567839096) then the bot will remove him in the banned players (if its in their), then add the super admin once again, kicking the one who kicked the super admin to avoid any problems that may occur. When the super admin got added back then the bot will message the group that a Fail safe mechanism has been initiated to any serious problems. you can modify it to make it more technological or something.
+
+Once added, the bot will replace it's nick name to "TENSURA", there's a function when a user will mention the bot... If they mention the bot in tensura "@TENSURA" they they will not be warned, kicked, or banned. But if they did mention it in its name "@Tanginamo Pabayo" then they will get warned if there is a "tanginamo" or "tangina" in the warning words set by the admins.
+
+the bot will now also save images so that if it gets unsend by the user, the bot will not message it in the group, instead the bot will direct message the super admin and sends the unsent photo to him. The unsent message will not trigger but the unsent photo will send to the super admin
+
+Change the super admin term or name to DEVELOPER in all of the files, codes, or whatsoever.
+
+Again attendance should not list or include the ADMIN NAMES AND THE DEVELOPER NAME.

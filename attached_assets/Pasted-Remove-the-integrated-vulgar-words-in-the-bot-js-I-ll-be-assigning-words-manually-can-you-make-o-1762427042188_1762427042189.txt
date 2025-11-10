@@ -1,0 +1,23 @@
+Remove the integrated vulgar words in the bot.js, I'll be assigning words manually
+
+can you make or have a solution to my problem?
+
+The bot has a feature where if it gets offline and after it gets online it will scan for any vulgar words listed in warning words while the bot is offline, bot scans for about 500-2000 messages I think? But after the bot boots up then scans the messages while it is offline... sometimes the warnings either warned manually by the admin, detected by the system, or due to anti spam functionality... gets doubled and duplicated because of the function where it scans for vulgar words in a wide range of messages (2000 or 500 messages), making the user banned just because of a doubled or duplicated warning due to flaw of the bot offline detection mechanism
+
+The bot is running in a PM2 server (a node is package that make .js scripts run 24/7) so if it gets rebooted the offline mechanism will run again and again, If my solution can aid this problem then implement and apply it, if not then I need you to make a solution for this problem.
+
+Solution: If the DEVELOPER or SUPER ADMIN executed the command .shutdown, then the running in the pm2 status should also shutdown and stop so that it will not run again, preventing the running of offline scanning function of the bot.
+
+=================================================================================================================
+
+May i also request to make 61561144200531 an SUPER ADMIN
+And retain 100092567839096 as the Developer
+
+- Super admin and developer cannot be banned or kicked at any cost at any reason or cannot be detected by the bot anti vulgar system, even the offline mechanism.
+- They two the only have an access to the .banall command to clean up the group members and they will not be kicked or banned by it, after the .banall then the bot leaves the group chat
+
+The bot will detect any Admin changes (in the group chat admins not in the bot, there's a difference there) and if someone got promoted to admin in that specific group chat then the bot will remove it, also after the bot got online It will scan for admins of that group and remove them from being admin because The bot, the super admin, and the developer should be the only admin of that group chat. But, the regular users can be promoted to being admin in the BOT (In the bot only) and access the commands for admin only, if the SUPER ADMIN and DEVELOPER used .addmin @mention command to them.
+
+add a command .removeallbans to remove all .banned records and lift up their ban also resetting the data of their consecutive ban to reset it to 3 days (this can only be used by the SUPER ADMIN and the DEVELOPER)
+
+add a command .removeallwarnings to remove all .warninglist records and lift up their warnings also resetting the data of their consecutive warnings to 0 (this can only be used by the SUPER ADMIN and the DEVELOPER)

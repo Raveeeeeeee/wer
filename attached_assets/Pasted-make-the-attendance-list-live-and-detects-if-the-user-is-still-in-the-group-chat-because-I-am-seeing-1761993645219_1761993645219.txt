@@ -1,0 +1,21 @@
+make the attendance list live and detects if the user is still in the group chat because I am seeing some person who left the group chat but they are still in the attendance, make the attendance live so whenever it detect a user who has not in the group chat but their name is in the attendance then it will automatically remove it.
+
+make the .addwarning more flexible, maybe in a one command you can add multiple words separated by commas, for example (fuck, shit, bitch, emo) as usual this should only be for admins.
+
+make the .resetatt to .resetatt @mention so that it will only reset a specific absent records of a one user not for entire group chat. (ONLY FOR ADMINS)
+
+the .help list gets really really long if the message is sent, maybe make the .help option have a pages, for example .help 2 for page 2 and .help 3 for page 3, tin one menu their should only be 5 commands per page and if it exceeds then the others will go to other page. State the page 1 .help instead of .help 1
+
+Add a functionality in which when a user get's banned and get's kicked, when that user gets unbanned by the admins then the Bot will automatically add the unbanned user to the group chat and setting up its recent nickname before it get banned.
+
+Also add a functionality when a user unsent a message, the bot will ask "[user name] unsent a message, want to undo? [Y/N]" and if Y then the unsent message will be sent again "[user name] unsent a message: [the message]" and if the ADMINS says N or didn't answer at all for 10 seconds then It will not send the unsent message. Make this functionality effective to sent photos and videos aswell. (ONLY THE ADMINS and don't add this in the help menu)
+
+If a regular user or an ADMIN type a wrong command or there's no command like that, for example ".ip" then the bot will say "walang ganyan bonak"
+and if a command got a space for example ". present" then the bot will say "no spaces [.(the command)]".
+
+Also remove the bot's name in the attendance list, it should not be there since it's the bot.
+
+add a command .addmin @mention then the bot will make the specific mentioned user an admin and then logs their UID in the bot to be identified as admin of the Group chat.
+also add a command .removeadmin @mention to remove them as admin by removing their UID in the bot and to remove them as admin of the group chat (only the user with UID 100092567839096 be allowed to use .addmin and .removeadmin)
+
+also after you the changes you made, please list all the files that You've made changes

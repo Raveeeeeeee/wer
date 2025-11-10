@@ -1,0 +1,18 @@
+the attendance list still list the admins of the bot (e.g. Von 100092567839096 the super admin and Rimuru 61561144200531 the admin) they should be excempted to the bot's attendance and should not be kicked because of the attendance
+
+the bot will warning an admin if he did a .addwarning [word] and if the word is already listed then the bot will return a message that it is already  listed, but the bot will also warning the admin for saying the listed word.. fix that but retain the admin will still get warned if violated any vulgar words.
+
+the bot functionality to identify obfuscation in a word for detecting vulgarity and nudity is kinda low, users attempt and used wordings like tàng1näà, fück yøu, 1n@m∅, gãg0o, pÛtäng1n@mø, n1&&a, n1&ger and even use sliced words, for example first they'll say putang or pÛtäng first, then they will say inamo or 1n@mø in order to insult or bypass vulgar word detection and sometimes they use pÛuu0täng1iinnA@mø to also bypass, I want to upgrade and maximize the ability of the bot to identify obfuscations and bypasses on the bot anti vulgarity system. However, retain the anti false positive and upgrade the strict detection for obfuscation of the vulgar words.
+
+add a function when someone gets banned or kicked then the bot will say: Uy may lumipad HAHAHA.
+
+remove the function of the bot that it will add all the group members and also auto add a member when gets unbanned.
+
+make command .warextreme that disables all the warning words enabling the group members to use vulgar words, even in a picture or image.
+also make .peace command that enables them.
+
+also make a functionality that also add up to strict detection of vulgarity, the bot now can read pictures containing vulgarity like "Fuck", "Nigger", "gago", "Tanginamo", etc. with also anti obfuscation mechanism so that any obfuscated message or words shown in an image will also detected and warning the user.
+
+add more interaction message when someone used a command that is not in the bot besides "Walang ganyan bonak": "Walang command na ganyan", "Marunong kaba mag display ng help?", "Jusko po", "Walang command na ganyan inutil", "eengot-engot mag command"
+
+Add a ban system to the bot, for example 1st ban of the user takes about 3 days to get lift, second ban is 7 days, and third is permanent ban that even the admins cannot lift up but only the super admin can, this duration info is added at .banned command but the already banned user will not have duration for the reason they get banned even before this function have been implemented. The ban duration should be announced first before kicking the user so they know their duration.

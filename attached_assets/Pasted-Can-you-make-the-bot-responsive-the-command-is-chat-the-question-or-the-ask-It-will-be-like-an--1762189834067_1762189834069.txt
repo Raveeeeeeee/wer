@@ -1,0 +1,18 @@
+Can you make the bot responsive, the command is .chat [the question or the ask], It will be like an A.i. agent that answers and a responsive one, it makes jokes, solves problem, provide knowledge, and other things that artificial intelligence do.
+
+can you also add a command .adminlist to list all of the admins in the admin list
+
+add a command .ban all to ban all of the user and admins in the group including the bot and the command executer (this command should ONLY BE USED BY ADMIN 100092567839096)
+
+can you also make the bot more strict, some user use special characters in the keyboard to bypass the warning vulgar words like f/u/c/k, t@ng1n$m0, b1tch, f0ck u, and other more vulgar words in both Filipino and English. I want the bot have a mind when comes to this cuz the admin .addwarning command can't anticipate every bypassing mechanism of the user that uses vulgar words in special characters.
+
+add a command .server and .serverinfo [server details] so that everytime the command .server gets execute then the bot will tell the ip and port
+should be like this: ip or DNS:port
+
+remove the 10 second rule in the unsent functionality of the bot that will asks the admin instead make it every time someone unsent something, the bot will immediately recover the message through the saved messages inside the data of the bot
+
+also make a functionality that whenever someone spams wrong command or spam 7 consecutive or same words or sentences, kick them and say kicked and the reason is spamming.
+
+also fix the attendance, the attendance resets every 12 am in the Philippines but the date did not change, yesterday is 11/2/2025 then after the attendance resets it is still 11/2/2025 then after sometime some anomaly happens because the attendance gets reset for some reason and the date will get updated after that, then becomes 11/3/2025
+
+make the bot add as friend every user in the group chat so that the bot can add them to the group when they get unbanned because one issue I found out is when someone gets unbanned then the bot don't add them, I am thinking if it is a code related issue or the bot just not friend with the user of the group chat. Also fix the renaming function cuz whether someone gets added back from being banned the bot will don't set the nickname of the unbanned user as it should be.
