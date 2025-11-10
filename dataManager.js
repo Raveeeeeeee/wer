@@ -224,6 +224,7 @@ class DataManager {
   resetDailyAttendance() {
     const today = this.getTodayDate();
     const usersToKick = [];
+    const usersToWarn = [];
     
     for (const threadID in this.attendance) {
       this.attendance[threadID].date = today;
@@ -238,6 +239,12 @@ class DataManager {
               nickname: member.nickname,
               reason: `3 consecutive days absent (${member.consecutiveAbsences} days)`
             });
+          } else if (member.consecutiveAbsences === 2) {
+            usersToWarn.push({
+              threadID,
+              userID: member.userID,
+              nickname: member.nickname
+            });
           }
         }
         member.present = false;
@@ -245,7 +252,7 @@ class DataManager {
     }
     
     this.saveJSON(this.attendanceFile, this.attendance);
-    return usersToKick;
+    return { usersToKick, usersToWarn };
   }
 
   getBanCount(threadID, userID) {
@@ -258,6 +265,16 @@ class DataManager {
     this.banCount[key] = (this.banCount[key] || 0) + 1;
     this.saveJSON(this.banCountFile, this.banCount);
     return this.banCount[key];
+  }
+
+  resetBanCount(threadID, userID) {
+    const key = `${threadID}_${userID}`;
+    if (this.banCount[key]) {
+      delete this.banCount[key];
+      this.saveJSON(this.banCountFile, this.banCount);
+      return true;
+    }
+    return false;
   }
 
   banMember(threadID, userID, nickname, reason, bannedBy) {
