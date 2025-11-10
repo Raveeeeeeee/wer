@@ -143,6 +143,10 @@ async function initializeBot() {
         scanMissedVulgarWords();
       }, 5000);
       
+      setTimeout(() => {
+        checkAttendanceOnStartup();
+      }, 10000);
+      
       resolve(api);
     });
   });
@@ -318,7 +322,7 @@ async function handleMessage(event) {
   } else if (message === ".secret") {
     console.log("✅ Executing .secret command");
     await handleSecretCommand(threadID, messageID, senderID);
-  } else if (message.startsWith(".info ")) {
+  } else if (message.startsWith(".info ") || message === ".info me") {
     console.log("✅ Executing .info command");
     await handleInfoCommand(threadID, messageID, senderID, event);
   } else if (message === ".shutdown") {
@@ -336,6 +340,9 @@ async function handleMessage(event) {
   } else if (message.startsWith(".removeadmin ")) {
     console.log("✅ Executing .removeadmin command");
     await handleRemoveAdminCommand(threadID, messageID, senderID, event);
+  } else if (message.startsWith(".removebanrecord ")) {
+    console.log("✅ Executing .removebanrecord command");
+    await handleRemoveBanRecordCommand(threadID, messageID, senderID, event);
   } else if (message === ".adminlist") {
     console.log("✅ Executing .adminlist command");
     await handleAdminListCommand(threadID, messageID);
@@ -412,6 +419,7 @@ async function handleHelpCommand(threadID, messageID, senderID, message) {
   const developerCommands = [
     ".addmin @user - Make user an admin in this group (DEVELOPER & SUPER ADMIN ONLY)",
     ".removeadmin @user - Remove user as admin from this group (DEVELOPER & SUPER ADMIN ONLY)",
+    ".removebanrecord @user - Reset a user's ban count to 0 (DEVELOPER & SUPER ADMIN ONLY)",
     ".banall - Ban everyone in the group (DEVELOPER & SUPER ADMIN ONLY)",
     ".removeallbans - Remove all ban records and reset to 3 days duration",
     ".removeallwarnings - Remove all warning records for all users"
@@ -726,12 +734,14 @@ async function checkMessageSpam(threadID, messageID, senderID, message) {
     
     if (allSame) {
       if (userSpam.messages.length === 3 && !userSpam.warned) {
-        sendMessage(threadID, "⚠️ Warning: You're spamming the same message. If you continue, you will receive a permanent warning!\n\nUse .help to see available commands and avoid consequences.", messageID);
         userSpam.warned = true;
+        sendMessage(threadID, "⚠️ Warning: You're spamming the same message. If you continue, you will receive a permanent warning!\n\nUse .help to see available commands and avoid consequences.", messageID);
         return false;
       }
       
-      if (userSpam.messages.length >= 5) {
+      if (userSpam.messages.length >= 5 && !userSpam.permanentWarningIssued) {
+        userSpam.permanentWarningIssued = true;
+        
         const threadInfo = await getThreadInfo(threadID);
         const userInfo = await getUserInfo(senderID);
         const nickname = threadInfo?.nicknames?.[senderID] || userInfo?.name || "User";
@@ -742,6 +752,10 @@ async function checkMessageSpam(threadID, messageID, senderID, message) {
 
         spamDetection.delete(key);
         return true;
+      }
+      
+      if (userSpam.messages.length >= 5) {
+        return false;
       }
     }
   }
@@ -999,7 +1013,8 @@ const SAFE_WORDS = [
   'luck', 'lucky', 'luckily',
   'suck', 'sucks', 'sucker',
   'truck', 'trucks',
-  'stuck'
+  'stuck',
+  'sit', 'sits', 'sitting'
 ];
 
 function isSafeWord(word) {
@@ -1790,14 +1805,20 @@ async function handleSecretCommand(threadID, messageID, senderID) {
 }
 
 async function handleInfoCommand(threadID, messageID, senderID, event) {
+  const message = event.body;
   const mentions = event.mentions;
   
-  if (!mentions || Object.keys(mentions).length === 0) {
-    sendMessage(threadID, "❌ Please mention a user to view their info!\n\nUsage: .info @user", messageID);
+  let targetUserID;
+  
+  if (message === ".info me") {
+    targetUserID = senderID;
+  } else if (!mentions || Object.keys(mentions).length === 0) {
+    sendMessage(threadID, "❌ Please mention a user to view their info!\n\nUsage: .info @user or .info me", messageID);
     return;
+  } else {
+    targetUserID = Object.keys(mentions)[0];
   }
 
-  const targetUserID = Object.keys(mentions)[0];
   const threadInfo = await getThreadInfo(threadID);
   const userInfo = await getUserInfo(targetUserID);
   
@@ -1808,32 +1829,47 @@ async function handleInfoCommand(threadID, messageID, senderID, event) {
 
   const nickname = threadInfo?.nicknames?.[targetUserID] || userInfo.name || "User";
   
-  let role = "Member";
+  let role = "";
+  let roleEmoji = "";
   if (isDeveloper(targetUserID)) {
-    role = "DEVELOPER";
+    role = "*DEVELOPER*";
+    roleEmoji = "👨‍💻";
   } else if (isSuperAdmin(targetUserID)) {
-    role = "Super Admin";
+    role = "*SUPER ADMIN*";
+    roleEmoji = "👑";
   } else if (isAdmin(threadID, targetUserID)) {
-    role = "Admin";
+    role = "*ADMIN*";
+    roleEmoji = "💻";
+  } else {
+    role = "_Member_";
+    roleEmoji = "✅";
   }
 
   const banCount = data.getBanCount(threadID, targetUserID);
-  let banStatus = "No violations";
+  let banStatus = "✅ No violations";
   if (banCount === 1) {
-    banStatus = "1 violation";
+    banStatus = "⚠️ 1 violation";
   } else if (banCount === 2) {
-    banStatus = "2 violations - IMMINENT REMOVAL";
+    banStatus = "🚨 2 violations - IMMINENT REMOVAL";
   } else if (banCount >= 3) {
-    banStatus = `${banCount} violations - PERMANENTLY BANNED`;
+    banStatus = `🔴 ${banCount} violations - PERMANENTLY BANNED`;
   }
 
   const warnings = data.getWarningCount(threadID, targetUserID);
+  let warningStatus = `${warnings}`;
+  if (warnings === 2) {
+    warningStatus = `${warnings} - IMMINENT BAN`;
+  } else if (warnings >= 3) {
+    warningStatus = `${warnings} - BANNED`;
+  }
+  
   const warningsList = data.getAllWarnings(threadID).find(w => w.userID === targetUserID);
   let warningsText = "None";
   if (warningsList && warningsList.reasons && warningsList.reasons.length > 0) {
-    warningsText = warningsList.reasons.map((r, i) => 
-      `  ${i + 1}. ${r.reason} - ${r.date}${r.permanent ? ' [PERMANENT]' : ''}`
-    ).join('\n');
+    warningsText = warningsList.reasons.map((r, i) => {
+      const timestamp = r.date || 'No timestamp';
+      return `  ${i + 1}. ${r.reason}\n     📅 ${timestamp}${r.permanent ? ' [🔒 PERMANENT]' : ''}`;
+    }).join('\n\n');
   }
 
   const joinDate = data.getMemberJoinDate(threadID, targetUserID);
@@ -1843,18 +1879,22 @@ async function handleInfoCommand(threadID, messageID, senderID, event) {
 
   const kickCount = data.getKickCount(threadID, targetUserID);
 
-  let infoMessage = `👤 USER INFORMATION\n\n`;
-  infoMessage += `Name: ${nickname}\n`;
-  infoMessage += `Role: ${role}\n`;
-  infoMessage += `UID: ${targetUserID}\n\n`;
-  infoMessage += `📊 MODERATION INFO\n`;
-  infoMessage += `Ban Status: ${banStatus}\n`;
-  infoMessage += `Warnings: ${warnings}\n`;
+  let infoMessage = `╔════════════════════════╗\n`;
+  infoMessage += `   👤 USER INFORMATION\n`;
+  infoMessage += `╚════════════════════════╝\n\n`;
+  infoMessage += `📝 Name: ${nickname}\n`;
+  infoMessage += `${roleEmoji} Role: ${role}\n`;
+  infoMessage += `🆔 UID: ${targetUserID}\n\n`;
+  infoMessage += `╔════════════════════════╗\n`;
+  infoMessage += `   📊 MODERATION INFO\n`;
+  infoMessage += `╚════════════════════════╝\n\n`;
+  infoMessage += `🚫 Ban Status: ${banStatus}\n`;
+  infoMessage += `⚠️ Warnings: ${warningStatus}\n`;
   if (warningsList && warningsList.reasons && warningsList.reasons.length > 0) {
-    infoMessage += `\nWarning History:\n${warningsText}\n`;
+    infoMessage += `\n📋 Warning History:\n${warningsText}\n`;
   }
-  infoMessage += `\nKick Count: ${kickCount}\n`;
-  infoMessage += `Member Since: ${joinDateFormatted}`;
+  infoMessage += `\n👢 Kick Count: ${kickCount}\n`;
+  infoMessage += `📆 Member Since: ${joinDateFormatted}`;
 
   sendMessage(threadID, infoMessage, messageID);
 }
@@ -2044,6 +2084,43 @@ async function handleRemoveAdminCommand(threadID, messageID, senderID, event) {
   sendMessage(threadID, `✅ ${nickname} has been removed as admin in this group.\n\nUID: ${targetUserID}`, messageID);
 }
 
+async function handleRemoveBanRecordCommand(threadID, messageID, senderID, event) {
+  if (!isDeveloper(senderID) && !isSuperAdmin(senderID)) {
+    sendMessage(threadID, "❌ Only the DEVELOPER and SUPER ADMIN can reset ban records!", messageID);
+    return;
+  }
+
+  const mentions = event.mentions || {};
+  let mentionedUserIDs = Object.keys(mentions);
+  
+  if (mentionedUserIDs.length === 0) {
+    if (event.messageReply && event.messageReply.senderID) {
+      mentionedUserIDs = [event.messageReply.senderID];
+    } else {
+      sendMessage(threadID, "❌ Usage: .removebanrecord @mention\nMention a user to reset their ban count to 0.\n\nAlternatively, reply to a message with: .removebanrecord", messageID);
+      return;
+    }
+  }
+  
+  const targetUserID = mentionedUserIDs[0];
+
+  const threadInfo = await getThreadInfo(threadID);
+  const userInfo = await getUserInfo(targetUserID);
+  const nickname = threadInfo?.nicknames?.[targetUserID] || userInfo?.name || "User";
+  const adminInfo = await getUserInfo(senderID);
+  const adminName = threadInfo?.nicknames?.[senderID] || adminInfo?.name || "Admin";
+  
+  const previousBanCount = data.getBanCount(threadID, targetUserID);
+  const resetSuccess = data.resetBanCount(threadID, targetUserID);
+  
+  if (resetSuccess) {
+    sendMessage(threadID, `✅ Ban record reset for ${nickname} by ${adminName}.\n\nPrevious ban count: ${previousBanCount}\nNew ban count: 0\n\nTheir next ban will be treated as a first offense (3 days).`, messageID);
+    console.log(`✅ Reset ban count for ${nickname} (${targetUserID}) in thread ${threadID} by ${adminName} (${senderID})`);
+  } else {
+    sendMessage(threadID, `❌ ${nickname} has no ban records to reset!`, messageID);
+  }
+}
+
 async function handleAdminListCommand(threadID, messageID) {
   const groupAdmins = data.getGroupAdmins(threadID) || [];
   
@@ -2213,12 +2290,14 @@ async function handleInvalidCommand(threadID, messageID, senderID, message) {
   userSpam.commands.push(message);
 
   if (userSpam.commands.length === 3 && !userSpam.warned) {
-    sendMessage(threadID, "⚠️ Warning: You're spamming invalid commands. If you continue, you will receive a permanent warning!\n\nUse .help to see available commands and avoid consequences.", messageID);
     userSpam.warned = true;
+    sendMessage(threadID, "⚠️ Warning: You're spamming invalid commands. If you continue, you will receive a permanent warning!\n\nUse .help to see available commands and avoid consequences.", messageID);
     return;
   }
 
-  if (userSpam.commands.length >= 5) {
+  if (userSpam.commands.length >= 5 && !userSpam.permanentWarningIssued) {
+    userSpam.permanentWarningIssued = true;
+    
     const threadInfo = await getThreadInfo(threadID);
     const userInfo = await getUserInfo(senderID);
     const nickname = threadInfo?.nicknames?.[senderID] || userInfo?.name || "User";
@@ -2228,6 +2307,10 @@ async function handleInvalidCommand(threadID, messageID, senderID, message) {
     await issueWarning(threadID, messageID, senderID, { body: message }, "Spamming (5 invalid commands in 10 seconds)", true);
 
     spamDetection.delete(key);
+    return;
+  }
+  
+  if (userSpam.commands.length >= 5) {
     return;
   }
 
@@ -2754,7 +2837,35 @@ function startDailyReset() {
 
 async function performDailyReset() {
   console.log("🔄 Resetting daily attendance...");
-  const usersToKick = data.resetDailyAttendance();
+  const { usersToKick, usersToWarn } = data.resetDailyAttendance();
+  
+  if (usersToWarn.length > 0) {
+    const warningsByThread = {};
+    usersToWarn.forEach(user => {
+      if (!warningsByThread[user.threadID]) {
+        warningsByThread[user.threadID] = [];
+      }
+      warningsByThread[user.threadID].push(user);
+    });
+    
+    for (const threadID in warningsByThread) {
+      const users = warningsByThread[threadID];
+      const threadInfo = await getThreadInfo(threadID);
+      
+      let warningMessage = `⚠️ ATTENDANCE WARNING ⚠️\n\n`;
+      warningMessage += `The following members have 2 consecutive absences and are at risk of being banned:\n\n`;
+      
+      users.forEach((user, index) => {
+        const displayName = threadInfo?.nicknames?.[user.userID] || user.nickname;
+        warningMessage += `${index + 1}. ${displayName}\n`;
+      });
+      
+      warningMessage += `\n⚠️ Please use .present consistently to avoid getting banned after 3 consecutive absences!`;
+      
+      sendMessage(threadID, warningMessage);
+      console.log(`⚠️ Sent 2-day absence warning to thread ${threadID} for ${users.length} users`);
+    }
+  }
   
   if (usersToKick.length > 0) {
     console.log(`⚠️ Found ${usersToKick.length} users to auto-kick for consecutive absences`);
@@ -2776,24 +2887,121 @@ async function performDailyReset() {
       if (uid) {
         sendMessage(
           user.threadID, 
-          `🚫 ${user.nickname} has been automatically removed for ${user.reason}.\n\nBan ID: ${uid}\nTo unban: .unban ${uid}`
+          `🚫 ${user.nickname} has been automatically banned and removed for ${user.reason}.\n\nBan ID: ${uid.uid}\nDuration: ${uid.durationType}\nTo unban: .unban ${uid.uid}`
         );
         
         setTimeout(() => {
-          api.removeUserFromGroup(user.userID, user.threadID, (err) => {
-            if (err) {
-              console.error(`❌ Failed to remove ${user.nickname} from group:`, err);
-              console.log("⚠️ User marked as banned but removal failed - may need manual intervention");
-            } else {
-              console.log(`✅ Auto-kicked ${user.nickname} from group ${user.threadID}`);
-            }
-          });
-        }, 1500);
+          sendMessage(user.threadID, `Uy may lumipad HAHAHA\n\nGoodboy ka next time ha HAHA 😂😂`);
+          
+          setTimeout(() => {
+            api.removeUserFromGroup(user.userID, user.threadID, (err) => {
+              if (err) {
+                console.error(`❌ Failed to remove ${user.nickname} from group:`, err);
+                console.log("⚠️ User marked as banned but removal failed - may need manual intervention");
+              } else {
+                console.log(`✅ Auto-kicked ${user.nickname} from group ${user.threadID}`);
+              }
+            });
+          }, 1000);
+        }, 1000);
       }
     }
   }
   
   console.log("✅ Daily reset complete");
+}
+
+async function checkAttendanceOnStartup() {
+  console.log("🔍 Checking for users with 3+ consecutive absences on startup...");
+  
+  try {
+    const threadList = await new Promise((resolve) => {
+      api.getThreadList(25, null, [], (err, list) => {
+        if (err) {
+          console.error("Failed to get thread list:", err);
+          resolve([]);
+        } else {
+          resolve(list);
+        }
+      });
+    });
+    
+    console.log(`📋 Found ${threadList.length} threads to check for attendance violations`);
+    
+    for (const thread of threadList) {
+      const threadID = thread.threadID;
+      try {
+        const threadInfo = await getThreadInfo(threadID);
+        if (!threadInfo) {
+          console.log(`⚠️ Could not get thread info for ${threadID}, skipping...`);
+          continue;
+        }
+        
+        const currentParticipants = new Set(threadInfo.participantIDs || []);
+        const attendance = data.getAttendance(threadID, true);
+        
+        for (const member of attendance.members) {
+          if (!member.consecutiveAbsences || member.consecutiveAbsences < 3) {
+            continue;
+          }
+          
+          if (!currentParticipants.has(member.userID)) {
+            console.log(`✓ User ${member.nickname} (${member.userID}) already removed from group`);
+            continue;
+          }
+          
+          if (data.isBanned(threadID, member.userID)) {
+            console.log(`⚠️ User ${member.nickname} is already banned but still in group - attempting removal`);
+            api.removeUserFromGroup(member.userID, threadID, (err) => {
+              if (err) {
+                console.error(`❌ Failed to remove already-banned user ${member.nickname}:`, err);
+              } else {
+                console.log(`✅ Removed already-banned user ${member.nickname} from group ${threadID}`);
+              }
+            });
+            continue;
+          }
+          
+          console.log(`⚠️ Found user ${member.nickname} with ${member.consecutiveAbsences} consecutive absences still in group - banning and removing`);
+          
+          const uid = data.banMember(
+            threadID,
+            member.userID,
+            member.nickname,
+            `${member.consecutiveAbsences} consecutive days absent (missed while bot was offline)`,
+            "Auto-kick System"
+          );
+          
+          if (uid) {
+            sendMessage(
+              threadID,
+              `🚫 ${member.nickname} has been automatically banned and removed for ${member.consecutiveAbsences} consecutive days absent.\n\nBan ID: ${uid.uid}\nDuration: ${uid.durationType}\nTo unban: .unban ${uid.uid}`
+            );
+            
+            setTimeout(() => {
+              sendMessage(threadID, `Uy may lumipad HAHAHA\n\nGoodboy ka next time ha HAHA 😂😂`);
+              
+              setTimeout(() => {
+                api.removeUserFromGroup(member.userID, threadID, (err) => {
+                  if (err) {
+                    console.error(`❌ Failed to remove ${member.nickname} from group:`, err);
+                  } else {
+                    console.log(`✅ Auto-kicked ${member.nickname} from group ${threadID} (startup check)`);
+                  }
+                });
+              }, 1000);
+            }, 1000);
+          }
+        }
+      } catch (error) {
+        console.error(`Error checking attendance for thread ${threadID}:`, error);
+      }
+    }
+    
+    console.log("✅ Attendance startup check complete");
+  } catch (error) {
+    console.error("Error during attendance startup check:", error);
+  }
 }
 
 function startPeriodicAppStateSave() {
@@ -2971,7 +3179,13 @@ async function scanMissedVulgarWords() {
               
               console.log(`⚠️ Found missed vulgar word from ${nickname} in thread ${threadID}`);
               
+              const previousWarningCount = data.getWarningCount(threadID, message.senderID);
               const warningCount = data.addWarning(threadID, message.senderID, nickname, `[Missed while offline] Used vulgar word: "${keyword}"`, message.messageID);
+              
+              if (warningCount === previousWarningCount) {
+                console.log(`⚠️ Duplicate warning detected for ${nickname}, skipping notification`);
+                break;
+              }
               
               if (warningCount >= 3) {
                 const banReason = `Accumulated 3 warnings`;
