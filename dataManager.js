@@ -36,6 +36,27 @@ class DataManager {
     this.memberJoinDates = this.loadJSON(this.memberJoinDatesFile, {});
     
     this.messageCache = new Map();
+    
+    this.globalAdminIDs = [];
+    this.protectedUserIDs = [];
+  }
+  
+  setGlobalAdmins(adminIDs, protectedIDs) {
+    this.globalAdminIDs = adminIDs || [];
+    this.protectedUserIDs = protectedIDs || [];
+  }
+  
+  isAdminUser(threadID, userID) {
+    if (this.protectedUserIDs.includes(userID)) {
+      return true;
+    }
+    
+    if (this.globalAdminIDs.includes(userID)) {
+      return true;
+    }
+    
+    const groupAdmins = this.getGroupAdmins(threadID);
+    return groupAdmins.includes(userID);
   }
 
   ensureDataDir() {
@@ -98,7 +119,9 @@ class DataManager {
     const excludedUsers = this.getExcludedMembers(threadID);
     const filteredAttendance = {
       ...this.attendance[threadID],
-      members: this.attendance[threadID].members.filter(m => !excludedUsers.includes(m.userID))
+      members: this.attendance[threadID].members.filter(m => 
+        !excludedUsers.includes(m.userID) && !this.isAdminUser(threadID, m.userID)
+      )
     };
 
     return filteredAttendance;
@@ -126,12 +149,15 @@ class DataManager {
   }
 
   removeMember(threadID, userID) {
-    const attendance = this.getAttendance(threadID);
-    const memberIndex = attendance.members.findIndex(m => m.userID === userID);
+    if (!this.attendance[threadID]) {
+      return null;
+    }
+    
+    const memberIndex = this.attendance[threadID].members.findIndex(m => m.userID === userID);
     
     if (memberIndex !== -1) {
-      const removedMember = attendance.members[memberIndex];
-      attendance.members.splice(memberIndex, 1);
+      const removedMember = this.attendance[threadID].members[memberIndex];
+      this.attendance[threadID].members.splice(memberIndex, 1);
       this.saveJSON(this.attendanceFile, this.attendance);
       console.log(`✅ Removed ${removedMember.nickname} from attendance list in thread ${threadID}`);
       return removedMember;
@@ -173,7 +199,7 @@ class DataManager {
     const excludedUsers = this.getExcludedMembers(threadID);
     
     const missedList = attendance.members
-      .filter(m => !m.present && !excludedUsers.includes(m.userID))
+      .filter(m => !m.present && !excludedUsers.includes(m.userID) && !this.isAdminUser(threadID, m.userID))
       .map(m => ({
         userID: m.userID,
         nickname: m.nickname,
@@ -229,6 +255,11 @@ class DataManager {
     for (const threadID in this.attendance) {
       this.attendance[threadID].date = today;
       this.attendance[threadID].members.forEach(member => {
+        if (this.isAdminUser(threadID, member.userID)) {
+          member.present = false;
+          return;
+        }
+        
         if (!member.present) {
           member.consecutiveAbsences = (member.consecutiveAbsences || 0) + 1;
           
@@ -319,10 +350,11 @@ class DataManager {
       liftDate
     });
 
-    const attendance = this.getAttendance(threadID);
-    const memberIndex = attendance.members.findIndex(m => m.userID === userID);
-    if (memberIndex !== -1) {
-      attendance.members.splice(memberIndex, 1);
+    if (this.attendance[threadID]) {
+      const memberIndex = this.attendance[threadID].members.findIndex(m => m.userID === userID);
+      if (memberIndex !== -1) {
+        this.attendance[threadID].members.splice(memberIndex, 1);
+      }
     }
 
     this.saveJSON(this.bannedFile, this.banned);
