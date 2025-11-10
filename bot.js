@@ -135,6 +135,7 @@ async function initializeBot() {
       startDailyReset();
       startPeriodicAppStateSave();
       startPeriodicBanCheck();
+      startPeriodicFakeWarningCheck();
 
       console.log("✓ Bot is now running and listening for messages...\n");
       
@@ -184,11 +185,26 @@ async function handleEvent(event) {
     case "message_unsend":
       await handleUnsendMessage(event);
       break;
+    case "message_reaction":
+      await handleReaction(event);
+      break;
     case "event":
       await handleGroupEvent(event);
       break;
     default:
       console.log(`⚠️ Unhandled event type: ${event.type}`);
+  }
+}
+
+async function handleReaction(event) {
+  const { threadID, messageID, reaction, senderID } = event;
+  
+  if (!threadID || !messageID) return;
+  
+  if (data.isFakeWarningMessage(threadID, messageID)) {
+    console.log(`🎭 User ${senderID} reacted to fake warning message ${messageID}`);
+    sendMessage(threadID, "Joke lang, uto-uto HAHA");
+    data.removeFakeWarningMessage(threadID, messageID);
   }
 }
 
@@ -206,6 +222,16 @@ async function handleMessage(event) {
 
   const hasBumpedMessage = event.messageReply && event.messageReply.body;
   if (!body && !hasBumpedMessage) return;
+  
+  if (event.messageReply && event.messageReply.messageID) {
+    const repliedMessageID = event.messageReply.messageID;
+    if (data.isFakeWarningMessage(threadID, repliedMessageID)) {
+      console.log(`🎭 User ${senderID} replied to fake warning message ${repliedMessageID}`);
+      sendMessage(threadID, "Joke lang, uto-uto HAHA");
+      data.removeFakeWarningMessage(threadID, repliedMessageID);
+      return;
+    }
+  }
 
   const message = body ? body.trim() : "";
   
@@ -289,6 +315,12 @@ async function handleMessage(event) {
   } else if (message === ".peace") {
     console.log("✅ Executing .peace command");
     await handlePeaceCommand(threadID, messageID, senderID);
+  } else if (message === ".secret") {
+    console.log("✅ Executing .secret command");
+    await handleSecretCommand(threadID, messageID, senderID);
+  } else if (message.startsWith(".info ")) {
+    console.log("✅ Executing .info command");
+    await handleInfoCommand(threadID, messageID, senderID, event);
   } else if (message === ".shutdown") {
     console.log("✅ Executing .shutdown command");
     await handleShutdownCommand(threadID, messageID, senderID);
@@ -739,7 +771,7 @@ async function checkMentionWarning(threadID, messageID, senderID, message, event
       const normalizedKeyword = normalizeForDetection(keyword);
       const flexPattern = createFlexiblePattern(normalizedKeyword);
       
-      if (flexPattern.test(normalizedMessage)) {
+      if (matchFlexibleKeyword(normalizedMessage, normalizedKeyword, flexPattern)) {
         const threadInfo = await getThreadInfo(threadID);
         const userInfo = await getUserInfo(senderID);
         const nickname = threadInfo?.nicknames?.[senderID] || userInfo?.name || "User";
@@ -770,7 +802,7 @@ async function checkForVulgarWords(threadID, messageID, senderID, message, event
     const normalizedKeyword = normalizeForDetection(keyword);
     const flexPattern = createFlexiblePattern(normalizedKeyword);
     
-    if (flexPattern.test(normalizedMessage)) {
+    if (matchFlexibleKeyword(normalizedMessage, normalizedKeyword, flexPattern)) {
       let hasActualVulgarWord = originalWords.some(word => {
         const normalizedWord = normalizeForDetection(word);
         return normalizedWord === normalizedKeyword && !isSafeWord(word);
@@ -798,7 +830,7 @@ async function checkForVulgarWords(threadID, messageID, senderID, message, event
         const normalizedKeyword = normalizeForDetection(keyword);
         const flexPattern = createFlexiblePattern(normalizedKeyword);
         
-        if (flexPattern.test(normalizedRepliedMessage)) {
+        if (matchFlexibleKeyword(normalizedRepliedMessage, normalizedKeyword, flexPattern)) {
           await issueWarning(threadID, messageID, senderID, event, `Bumped a message with vulgar word: "${keyword}"`);
           return;
         }
@@ -828,7 +860,7 @@ async function checkForVulgarWords(threadID, messageID, senderID, message, event
       const normalizedKeyword = normalizeForDetection(keyword);
       const flexPattern = createFlexiblePattern(normalizedKeyword);
       
-      if (flexPattern.test(combinedMessage)) {
+      if (matchFlexibleKeyword(combinedMessage, normalizedKeyword, flexPattern)) {
         await issueWarning(threadID, messageID, senderID, event, `Used vulgar word across multiple messages: "${keyword}" (Combined: "${combinedOriginalText.substring(0, 50)}...")`);
         userMessageHistory.delete(historyKey);
         return;
@@ -1165,6 +1197,8 @@ function expandAbbreviations(text) {
 
 function createFlexiblePattern(normalizedKeyword) {
   const chars = normalizedKeyword.split('');
+  const letterCount = chars.filter(c => /[a-z]/.test(c)).length;
+  
   const pattern = chars.map(char => {
     if (char === ' ') {
       return '\\s+';
@@ -1175,8 +1209,29 @@ function createFlexiblePattern(normalizedKeyword) {
     }
   }).join('');
   
-  const finalPattern = `(?:^|\\s)${pattern.replace(/\[\^a-z\]\*$/, '')}(?:\\s|$)`;
-  return new RegExp(finalPattern, 'i');
+  const finalPattern = `(?:^|\\s)(${pattern.replace(/\[\^a-z\]\*$/, '')})(?:\\s|$)`;
+  const regex = new RegExp(finalPattern, 'i');
+  
+  regex.expectedLetterCount = letterCount;
+  return regex;
+}
+
+function matchFlexibleKeyword(text, normalizedKeyword, flexPattern) {
+  const match = text.match(flexPattern);
+  if (!match) {
+    return false;
+  }
+  
+  const matchedText = match[1] || match[0];
+  const matchedLetters = (matchedText.match(/[a-zA-Z]/g) || []).length;
+  const expectedLetters = flexPattern.expectedLetterCount;
+  
+  if (matchedLetters !== expectedLetters) {
+    console.log(`✓ Skipping length mismatch: matched "${matchedText}" (${matchedLetters} letters) vs keyword (${expectedLetters} letters)`);
+    return false;
+  }
+  
+  return true;
 }
 
 function escapeRegex(string) {
@@ -1720,6 +1775,90 @@ async function handleShutdownCommand(threadID, messageID, senderID) {
   }, 2000);
 }
 
+async function handleSecretCommand(threadID, messageID, senderID) {
+  if (!isDeveloper(senderID)) {
+    sendMessage(threadID, "❌ Only the DEVELOPER can use this command!", messageID);
+    return;
+  }
+
+  const enabled = data.toggleFakeWarning(threadID);
+  if (enabled) {
+    sendMessage(threadID, "✅ Secret mode ENABLED!\n\nFake warnings will be sent randomly (2 times per month max).", messageID);
+  } else {
+    sendMessage(threadID, "✅ Secret mode DISABLED!\n\nNo more fake warnings will be sent.", messageID);
+  }
+}
+
+async function handleInfoCommand(threadID, messageID, senderID, event) {
+  const mentions = event.mentions;
+  
+  if (!mentions || Object.keys(mentions).length === 0) {
+    sendMessage(threadID, "❌ Please mention a user to view their info!\n\nUsage: .info @user", messageID);
+    return;
+  }
+
+  const targetUserID = Object.keys(mentions)[0];
+  const threadInfo = await getThreadInfo(threadID);
+  const userInfo = await getUserInfo(targetUserID);
+  
+  if (!userInfo) {
+    sendMessage(threadID, "❌ Could not retrieve user information.", messageID);
+    return;
+  }
+
+  const nickname = threadInfo?.nicknames?.[targetUserID] || userInfo.name || "User";
+  
+  let role = "Member";
+  if (isDeveloper(targetUserID)) {
+    role = "DEVELOPER";
+  } else if (isSuperAdmin(targetUserID)) {
+    role = "Super Admin";
+  } else if (isAdmin(threadID, targetUserID)) {
+    role = "Admin";
+  }
+
+  const banCount = data.getBanCount(threadID, targetUserID);
+  let banStatus = "No violations";
+  if (banCount === 1) {
+    banStatus = "1 violation";
+  } else if (banCount === 2) {
+    banStatus = "2 violations - IMMINENT REMOVAL";
+  } else if (banCount >= 3) {
+    banStatus = `${banCount} violations - PERMANENTLY BANNED`;
+  }
+
+  const warnings = data.getWarningCount(threadID, targetUserID);
+  const warningsList = data.getAllWarnings(threadID).find(w => w.userID === targetUserID);
+  let warningsText = "None";
+  if (warningsList && warningsList.reasons && warningsList.reasons.length > 0) {
+    warningsText = warningsList.reasons.map((r, i) => 
+      `  ${i + 1}. ${r.reason} - ${r.date}${r.permanent ? ' [PERMANENT]' : ''}`
+    ).join('\n');
+  }
+
+  const joinDate = data.getMemberJoinDate(threadID, targetUserID);
+  const joinDateFormatted = joinDate 
+    ? new Date(joinDate).toLocaleDateString('en-US', { timeZone: 'Asia/Manila', year: 'numeric', month: '2-digit', day: '2-digit' })
+    : "Unknown";
+
+  const kickCount = data.getKickCount(threadID, targetUserID);
+
+  let infoMessage = `👤 USER INFORMATION\n\n`;
+  infoMessage += `Name: ${nickname}\n`;
+  infoMessage += `Role: ${role}\n`;
+  infoMessage += `UID: ${targetUserID}\n\n`;
+  infoMessage += `📊 MODERATION INFO\n`;
+  infoMessage += `Ban Status: ${banStatus}\n`;
+  infoMessage += `Warnings: ${warnings}\n`;
+  if (warningsList && warningsList.reasons && warningsList.reasons.length > 0) {
+    infoMessage += `\nWarning History:\n${warningsText}\n`;
+  }
+  infoMessage += `\nKick Count: ${kickCount}\n`;
+  infoMessage += `Member Since: ${joinDateFormatted}`;
+
+  sendMessage(threadID, infoMessage, messageID);
+}
+
 async function handleWarExtremeCommand(threadID, messageID, senderID) {
   if (!isAdmin(threadID, senderID)) {
     sendMessage(threadID, "❌ Only admins can use this command!", messageID);
@@ -1805,7 +1944,8 @@ async function handleKickCommand(threadID, messageID, senderID, event) {
           console.error("Failed to remove user from group:", err);
           sendMessage(threadID, `❌ Failed to kick ${nickname}. Please try again or remove manually.`, messageID);
         } else {
-          console.log(`✅ Kicked ${nickname} from group ${threadID}`);
+          const kickCount = data.incrementKickCount(threadID, targetUserID);
+          console.log(`✅ Kicked ${nickname} from group ${threadID} (kick count: ${kickCount})`);
         }
       });
     }, 1000);
@@ -2129,37 +2269,58 @@ async function handleUnsendMessage(event) {
   const hasImages = cachedMessage.attachments && cachedMessage.attachments.some(att => att.type === 'photo');
   
   if (hasImages) {
-    let dmMessage = `🖼️ UNSENT IMAGE ALERT\n\n`;
-    dmMessage += `From: ${nickname}\n`;
-    dmMessage += `Group Thread ID: ${threadID}\n`;
-    dmMessage += `User ID: ${senderID}\n`;
-    dmMessage += `Time: ${new Date().toLocaleString('en-US', { timeZone: 'Asia/Manila' })}\n\n`;
+    const imageAttachments = cachedMessage.attachments.filter(att => att.type === 'photo');
+    const sentTime = new Date(cachedMessage.timestamp).toLocaleString('en-US', { 
+      timeZone: 'Asia/Manila',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: true
+    });
+    const unsentTime = new Date().toLocaleString('en-US', { 
+      timeZone: 'Asia/Manila',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: true
+    });
+    
+    let groupMessage = `⚠️ ${nickname} has unsent a photo!\n\n`;
+    groupMessage += `📅 Sent: ${sentTime} (PHT)\n`;
+    groupMessage += `🗑️ Unsent: ${unsentTime} (PHT)\n`;
     
     if (cachedMessage.body) {
-      dmMessage += `Message Text: ${cachedMessage.body}\n\n`;
+      groupMessage += `\n💬 Caption: "${cachedMessage.body}"\n`;
     }
     
-    dmMessage += `Image URLs:\n`;
-    const imageAttachments = cachedMessage.attachments.filter(att => att.type === 'photo');
-    imageAttachments.forEach((att, i) => {
-      if (att.url) {
-        dmMessage += `${i + 1}. ${att.url}\n`;
-      }
-    });
-    
-    console.log(`📤 Attempting to send unsent image notification to Developer (${DEVELOPER_ID})`);
+    console.log(`📤 Sending unsent photo to group chat (${threadID})`);
     console.log(`📸 Image count: ${imageAttachments.length}`);
     
-    api.sendMessage(dmMessage, DEVELOPER_ID, (err) => {
-      if (err) {
-        console.error("❌ Failed to send unsent image notification to developer:", err);
-        console.error("Error details:", JSON.stringify(err, null, 2));
-      } else {
-        console.log(`✅ Successfully sent unsent image notification to developer for ${nickname}`);
-      }
-    });
+    sendMessage(threadID, groupMessage);
     
-    sendMessage(threadID, `⚠️ ${nickname} unsent a picture! (Notification sent to Developer)`);
+    setTimeout(() => {
+      imageAttachments.forEach((att, i) => {
+        if (att.url) {
+          const attachment = {
+            url: att.url
+          };
+          
+          api.sendMessage({ attachment }, threadID, (err) => {
+            if (err) {
+              console.error(`❌ Failed to send unsent image ${i + 1}:`, err);
+            } else {
+              console.log(`✅ Successfully sent unsent image ${i + 1} to group chat`);
+            }
+          });
+        }
+      });
+    }, 1000);
     
     return;
   }
@@ -2195,10 +2356,33 @@ async function handleUnsendMessage(event) {
     return;
   }
   
-  let revealMessage = `⚠️ ${nickname} unsent a message:\n\n`;
+  const sentTime = new Date(cachedMessage.timestamp).toLocaleString('en-US', { 
+    timeZone: 'Asia/Manila',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: true
+  });
+  const unsentTime = new Date().toLocaleString('en-US', { 
+    timeZone: 'Asia/Manila',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: true
+  });
+  
+  let revealMessage = `⚠️ ${nickname} unsent a message!\n\n`;
+  revealMessage += `📅 Sent: ${sentTime} (PHT)\n`;
+  revealMessage += `🗑️ Unsent: ${unsentTime} (PHT)\n\n`;
   
   if (cachedMessage.body) {
-    revealMessage += `"${cachedMessage.body}"\n\n`;
+    revealMessage += `💬 Message: "${cachedMessage.body}"\n\n`;
   }
   
   if (cachedMessage.attachments && cachedMessage.attachments.length > 0) {
@@ -2235,6 +2419,9 @@ async function handleGroupEvent(event) {
     }
 
     for (const userID of addedUserIDs) {
+      data.setMemberJoinDate(threadID, userID);
+      console.log(`📅 Recorded join date for user ${userID} in thread ${threadID}`);
+      
       if (userID === botUserId) {
         console.log("⏭️ Bot was added to group, changing nickname to TENSURA");
         api.changeNickname("TENSURA", threadID, botUserId, (err) => {
@@ -2620,6 +2807,77 @@ function startPeriodicAppStateSave() {
   console.log("💾 Periodic appstate refresh enabled (every 60 minutes)");
 }
 
+async function sendFakeWarningIfEnabled() {
+  try {
+    const threadList = await new Promise((resolve) => {
+      api.getThreadList(10, null, [], (err, list) => {
+        if (err) {
+          console.error("Failed to get thread list for fake warnings:", err);
+          resolve([]);
+        } else {
+          resolve(list);
+        }
+      });
+    });
+
+    for (const thread of threadList) {
+      const threadID = thread.threadID;
+      
+      if (!data.isFakeWarningEnabled(threadID)) continue;
+      if (!data.canSendFakeWarning(threadID)) continue;
+
+      const threadInfo = await getThreadInfo(threadID);
+      if (!threadInfo || !threadInfo.participantIDs) continue;
+
+      const eligibleUsers = threadInfo.participantIDs.filter(userID => 
+        !isProtectedUser(userID) && 
+        !isAdmin(threadID, userID) &&
+        userID !== botUserId
+      );
+
+      if (eligibleUsers.length === 0) continue;
+
+      const randomIndex = Math.floor(Math.random() * eligibleUsers.length);
+      const targetUserID = eligibleUsers[randomIndex];
+
+      const userInfo = await getUserInfo(targetUserID);
+      const nickname = threadInfo.nicknames?.[targetUserID] || userInfo?.name || "User";
+
+      const fakeReasons = [
+        "Used vulgar word: \"test\"",
+        "Spamming messages",
+        "Inappropriate behavior"
+      ];
+      const randomReason = fakeReasons[Math.floor(Math.random() * fakeReasons.length)];
+
+      const fakeMessage = `⚠️ ${nickname} has been warned!\n\nReason: ${randomReason}\nWarnings: ⛔⛔⛔\n\n❌ User has reached 3 warnings and will be kicked!`;
+
+      api.sendMessage(fakeMessage, threadID, (err, msgInfo) => {
+        if (!err && msgInfo) {
+          data.recordFakeWarning(threadID, msgInfo.messageID);
+          console.log(`🎭 Sent fake warning to ${nickname} in thread ${threadID}`);
+          
+          setTimeout(() => {
+            sendMessage(threadID, `Uy may lumipad HAHAHA\n\nGoodboy ka next time ha HAHA 😂😂`);
+          }, 2000);
+        }
+      });
+
+      break;
+    }
+  } catch (error) {
+    console.error("Error in sendFakeWarningIfEnabled:", error);
+  }
+}
+
+function startPeriodicFakeWarningCheck() {
+  setInterval(() => {
+    sendFakeWarningIfEnabled();
+  }, 60 * 60 * 1000);
+  
+  console.log("🎭 Periodic fake warning check enabled (every 60 minutes)");
+}
+
 function startPeriodicBanCheck() {
   setInterval(() => {
     const liftedBans = data.checkAndLiftExpiredBans();
@@ -2706,7 +2964,7 @@ async function scanMissedVulgarWords() {
             const normalizedKeyword = normalizeForDetection(keyword);
             const flexPattern = createFlexiblePattern(normalizedKeyword);
             
-            if (flexPattern.test(normalizedMessage)) {
+            if (matchFlexibleKeyword(normalizedMessage, normalizedKeyword, flexPattern)) {
               const userInfo = await getUserInfo(message.senderID);
               const threadInfo = await getThreadInfo(threadID);
               const nickname = threadInfo?.nicknames?.[message.senderID] || userInfo?.name || "User";
