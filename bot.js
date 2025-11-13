@@ -1918,17 +1918,17 @@ async function handleInfoCommand(threadID, messageID, senderID, event) {
 
   const kickCount = data.getKickCount(threadID, targetUserID);
 
-  let infoMessage = `╔════════════════════════╗\n`;
-  infoMessage += `   👤 USER INFORMATION\n`;
-  infoMessage += `╚════════════════════════╝\n\n`;
-  infoMessage += `📝 Name: ${nickname}\n`;
-  infoMessage += `${roleEmoji} Role: ${role}\n`;
-  infoMessage += `🆔 UID: ${targetUserID}\n\n`;
-  infoMessage += `╔════════════════════════╗\n`;
-  infoMessage += `   📊 MODERATION INFO\n`;
-  infoMessage += `╚════════════════════════╝\n\n`;
-  infoMessage += `🚫 Ban Status: ${banStatus}\n`;
-  infoMessage += `⚠️ Warnings: ${warningStatus}\n`;
+  let infoMessage = `\n`;
+  infoMessage += `👤 USER INFORMATION:\n`;
+  infoMessage += `\n\n`;
+  infoMessage += `> 📝 Name: ${nickname}\n`;
+  infoMessage += `> ${roleEmoji} Role: ${role}\n`;
+  infoMessage += `> 🆔 UID: ${targetUserID}\n\n`;
+  infoMessage += `\n`;
+  infoMessage += `📊 MODERATION INFO:\n`;
+  infoMessage += `\n\n`;
+  infoMessage += `- 🚫 Ban Status: ${banStatus}\n`;
+  infoMessage += `- ⚠️ Warnings: ${warningStatus}\n`;
   if (warningsList && warningsList.reasons && warningsList.reasons.length > 0) {
     infoMessage += `\n📋 Warning History:\n${warningsText}\n`;
   }
