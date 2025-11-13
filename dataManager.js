@@ -4,6 +4,7 @@ const path = require("path");
 class DataManager {
   constructor() {
     this.dataDir = path.join(__dirname, "data");
+    this.tempDir = path.join(__dirname, "temp", "unsent");
     this.greetingsFile = path.join(this.dataDir, "greetings.json");
     this.attendanceFile = path.join(this.dataDir, "attendance.json");
     this.bannedFile = path.join(this.dataDir, "banned.json");
@@ -17,8 +18,12 @@ class DataManager {
     this.fakeWarningsFile = path.join(this.dataDir, "fakeWarnings.json");
     this.kickCountFile = path.join(this.dataDir, "kickCount.json");
     this.memberJoinDatesFile = path.join(this.dataDir, "memberJoinDates.json");
+    this.pendingMembersFile = path.join(this.dataDir, "pendingMembers.json");
+    this.groupStatusFile = path.join(this.dataDir, "groupStatus.json");
+    this.superAdminsFile = path.join(this.dataDir, "superAdmins.json");
     
     this.ensureDataDir();
+    this.ensureTempDir();
     this.greetings = this.loadJSON(this.greetingsFile, {});
     this.attendance = this.loadJSON(this.attendanceFile, {});
     this.banned = this.loadJSON(this.bannedFile, {});
@@ -34,6 +39,10 @@ class DataManager {
     this.fakeWarnings = this.loadJSON(this.fakeWarningsFile, {});
     this.kickCount = this.loadJSON(this.kickCountFile, {});
     this.memberJoinDates = this.loadJSON(this.memberJoinDatesFile, {});
+    this.pendingMembers = this.loadJSON(this.pendingMembersFile, {});
+    this.groupStatus = this.loadJSON(this.groupStatusFile, {});
+    this.superAdmins = this.loadJSON(this.superAdminsFile, {});
+    this.offlineMessages = this.loadJSON(path.join(this.dataDir, "offlineMessages.json"), {});
     
     this.messageCache = new Map();
     
@@ -51,6 +60,10 @@ class DataManager {
       return true;
     }
     
+    if (this.isSuperAdmin(threadID, userID)) {
+      return true;
+    }
+    
     if (this.globalAdminIDs.includes(userID)) {
       return true;
     }
@@ -62,6 +75,12 @@ class DataManager {
   ensureDataDir() {
     if (!fs.existsSync(this.dataDir)) {
       fs.mkdirSync(this.dataDir, { recursive: true });
+    }
+  }
+
+  ensureTempDir() {
+    if (!fs.existsSync(this.tempDir)) {
+      fs.mkdirSync(this.tempDir, { recursive: true });
     }
   }
 
@@ -720,6 +739,15 @@ class DataManager {
     
     this.messageCache.set(messageID, cacheData);
     
+    if (!this.isGroupActive(threadID)) {
+      if (!this.offlineMessages[threadID]) {
+        this.offlineMessages[threadID] = [];
+      }
+      this.offlineMessages[threadID].push(cacheData);
+      this.saveJSON(path.join(this.dataDir, "offlineMessages.json"), this.offlineMessages);
+      console.log(`📦 Saved offline message for inactive group ${threadID}`);
+    }
+    
     setTimeout(() => {
       this.messageCache.delete(messageID);
     }, 60000);
@@ -976,6 +1004,181 @@ class DataManager {
   getMemberJoinDate(threadID, userID) {
     const key = `${threadID}_${userID}`;
     return this.memberJoinDates[key];
+  }
+
+  addPendingMember(threadID, userID, name, requestedBy) {
+    if (!this.pendingMembers[threadID]) {
+      this.pendingMembers[threadID] = [];
+    }
+    
+    const existing = this.pendingMembers[threadID].find(p => p.userID === userID);
+    if (existing) {
+      return false;
+    }
+    
+    this.pendingMembers[threadID].push({
+      userID,
+      name,
+      requestedBy,
+      timestamp: new Date().toISOString()
+    });
+    
+    this.saveJSON(this.pendingMembersFile, this.pendingMembers);
+    return true;
+  }
+
+  getPendingMembers(threadID) {
+    return this.pendingMembers[threadID] || [];
+  }
+
+  removePendingMember(threadID, index) {
+    if (!this.pendingMembers[threadID] || index < 0 || index >= this.pendingMembers[threadID].length) {
+      return null;
+    }
+    
+    const removed = this.pendingMembers[threadID].splice(index, 1)[0];
+    
+    if (this.pendingMembers[threadID].length === 0) {
+      delete this.pendingMembers[threadID];
+    }
+    
+    this.saveJSON(this.pendingMembersFile, this.pendingMembers);
+    return removed;
+  }
+
+  clearPendingMembers(threadID) {
+    if (this.pendingMembers[threadID]) {
+      delete this.pendingMembers[threadID];
+      this.saveJSON(this.pendingMembersFile, this.pendingMembers);
+      return true;
+    }
+    return false;
+  }
+
+  isGroupActive(threadID) {
+    if (!this.groupStatus[threadID]) {
+      return true;
+    }
+    return this.groupStatus[threadID].active !== false;
+  }
+
+  setGroupActive(threadID, active) {
+    if (!this.groupStatus[threadID]) {
+      this.groupStatus[threadID] = {};
+    }
+    
+    this.groupStatus[threadID].active = active;
+    this.groupStatus[threadID].lastChanged = new Date().toISOString();
+    
+    this.saveJSON(this.groupStatusFile, this.groupStatus);
+  }
+  
+  getOfflineMessages(threadID) {
+    return this.offlineMessages[threadID] || [];
+  }
+  
+  clearOfflineMessages(threadID) {
+    if (this.offlineMessages[threadID]) {
+      delete this.offlineMessages[threadID];
+      this.saveJSON(path.join(this.dataDir, "offlineMessages.json"), this.offlineMessages);
+      console.log(`🗑️ Cleared offline messages for group ${threadID}`);
+    }
+  }
+
+  getLastScan(threadID) {
+    if (!this.groupStatus[threadID]) {
+      return null;
+    }
+    return this.groupStatus[threadID].lastScan || null;
+  }
+
+  setLastScan(threadID, timestamp) {
+    if (!this.groupStatus[threadID]) {
+      this.groupStatus[threadID] = { active: true };
+    }
+    
+    this.groupStatus[threadID].lastScan = timestamp;
+    this.saveJSON(this.groupStatusFile, this.groupStatus);
+  }
+
+  getSuperAdmins(threadID) {
+    return this.superAdmins[threadID] || [];
+  }
+
+  addSuperAdmin(threadID, userID) {
+    if (!this.superAdmins[threadID]) {
+      this.superAdmins[threadID] = [];
+    }
+    
+    if (this.superAdmins[threadID].includes(userID)) {
+      return { success: false, reason: "already_super_admin" };
+    }
+    
+    if (this.superAdmins[threadID].length >= 3) {
+      return { success: false, reason: "max_limit_reached" };
+    }
+    
+    this.superAdmins[threadID].push(userID);
+    this.saveJSON(this.superAdminsFile, this.superAdmins);
+    return { success: true };
+  }
+
+  removeSuperAdmin(threadID, userID) {
+    if (!this.superAdmins[threadID]) {
+      return false;
+    }
+    
+    const index = this.superAdmins[threadID].indexOf(userID);
+    if (index === -1) {
+      return false;
+    }
+    
+    this.superAdmins[threadID].splice(index, 1);
+    
+    if (this.superAdmins[threadID].length === 0) {
+      delete this.superAdmins[threadID];
+    }
+    
+    this.saveJSON(this.superAdminsFile, this.superAdmins);
+    return true;
+  }
+
+  isSuperAdmin(threadID, userID) {
+    if (!this.superAdmins[threadID]) {
+      return false;
+    }
+    return this.superAdmins[threadID].includes(userID);
+  }
+
+  cacheMessageWithFiles(messageID, threadID, senderID, body, attachments, downloadedFiles) {
+    const cacheData = {
+      messageID,
+      threadID,
+      senderID,
+      body: body || "",
+      attachments,
+      downloadedFiles: downloadedFiles || [],
+      timestamp: Date.now()
+    };
+    
+    this.messageCache.set(messageID, cacheData);
+    
+    setTimeout(() => {
+      const cached = this.messageCache.get(messageID);
+      if (cached && cached.downloadedFiles) {
+        for (const filePath of cached.downloadedFiles) {
+          if (fs.existsSync(filePath)) {
+            try {
+              fs.unlinkSync(filePath);
+              console.log(`🗑️ Deleted temp file: ${filePath}`);
+            } catch (err) {
+              console.error(`Failed to delete temp file ${filePath}:`, err);
+            }
+          }
+        }
+      }
+      this.messageCache.delete(messageID);
+    }, 60000);
   }
 }
 
