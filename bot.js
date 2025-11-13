@@ -8,10 +8,8 @@ const COMMAND_COOLDOWN = 3000;
 const data = new DataManager();
 
 const DEVELOPER_ID = "100092567839096";
-const SUPER_ADMIN_ID = "61561144200531";
 const BOT_USER_ID_TO_DETECT = "61572200383571";
 let ADMIN_IDS = [
-  "61561144200531",
   "100043486073592",
   "100092567839096",
   "61561004878878",
@@ -29,20 +27,27 @@ const spamDetection = new Map();
 const unsentSpamTracking = new Map();
 const kickedUsersTracking = new Map();
 
-function isSuperAdmin(userID) {
-  return userID === SUPER_ADMIN_ID;
-}
-
 function isDeveloper(userID) {
   return userID === DEVELOPER_ID;
 }
 
-function isProtectedUser(userID) {
-  return userID === DEVELOPER_ID || userID === SUPER_ADMIN_ID;
+function isSuperAdmin(threadID, userID) {
+  return data.isSuperAdmin(threadID, userID);
+}
+
+function isProtectedUser(threadID, userID) {
+  if (userID === DEVELOPER_ID) {
+    return true;
+  }
+  return data.isSuperAdmin(threadID, userID);
 }
 
 function isAdmin(threadID, userID) {
-  if (isProtectedUser(userID)) {
+  if (isDeveloper(userID)) {
+    return true;
+  }
+  
+  if (isSuperAdmin(threadID, userID)) {
     return true;
   }
   
@@ -52,6 +57,22 @@ function isAdmin(threadID, userID) {
   
   const groupAdmins = data.getGroupAdmins(threadID);
   return groupAdmins.includes(userID);
+}
+
+function getUserRole(threadID, userID) {
+  if (isDeveloper(userID)) {
+    return 'developer';
+  }
+  
+  if (isSuperAdmin(threadID, userID)) {
+    return 'super_admin';
+  }
+  
+  if (isAdmin(threadID, userID)) {
+    return 'admin';
+  }
+  
+  return 'user';
 }
 
 function loadAppState() {
@@ -97,7 +118,7 @@ async function initializeBot() {
     console.log("✓ Loaded admin list:", ADMIN_IDS);
   }
   
-  data.setGlobalAdmins(ADMIN_IDS, [DEVELOPER_ID, SUPER_ADMIN_ID]);
+  data.setGlobalAdmins(ADMIN_IDS, [DEVELOPER_ID]);
   console.log("✓ Global admins and protected users set in DataManager");
   
   const loginOptions = {
@@ -227,6 +248,16 @@ async function handleMessage(event) {
 
   data.cacheMessage(messageID, threadID, senderID, body, attachments || []);
 
+  if (!data.isGroupActive(threadID)) {
+    console.log(`⏸️ Group ${threadID} is inactive, skipping message processing`);
+    const message = body ? body.trim() : "";
+    if (message === ".initialize" && isProtectedUser(threadID, senderID)) {
+      console.log(`🚀 Allowing .initialize command in inactive group`);
+      await handleInitializeCommand(threadID, messageID, senderID);
+    }
+    return;
+  }
+
   const hasBumpedMessage = event.messageReply && event.messageReply.body;
   if (!body && !hasBumpedMessage) return;
   
@@ -331,6 +362,9 @@ async function handleMessage(event) {
   } else if (message === ".shutdown") {
     console.log("✅ Executing .shutdown command");
     await handleShutdownCommand(threadID, messageID, senderID);
+  } else if (message === ".initialize") {
+    console.log("✅ Executing .initialize command");
+    await handleInitializeCommand(threadID, messageID, senderID);
   } else if (message.startsWith(".kick ")) {
     console.log("✅ Executing .kick command");
     await handleKickCommand(threadID, messageID, senderID, event);
@@ -343,6 +377,9 @@ async function handleMessage(event) {
   } else if (message.startsWith(".removeadmin ")) {
     console.log("✅ Executing .removeadmin command");
     await handleRemoveAdminCommand(threadID, messageID, senderID, event);
+  } else if (message.startsWith(".supaddmin ")) {
+    console.log("✅ Executing .supaddmin command");
+    await handleSupAddminCommand(threadID, messageID, senderID, event);
   } else if (message.startsWith(".removebanrecord ")) {
     console.log("✅ Executing .removebanrecord command");
     await handleRemoveBanRecordCommand(threadID, messageID, senderID, event);
@@ -416,7 +453,8 @@ async function handleHelpCommand(threadID, messageID, senderID, message) {
     ".kick @user [reason] - Kick user from group",
     ".ban @user [reason] - Ban and remove user",
     ".unban [Ban ID] - Unban user and add back to group",
-    ".shutdown - Shutdown the bot"
+    ".shutdown - Disable bot in this group (DEVELOPER & SUPER ADMIN ONLY)",
+    ".initialize - Re-enable bot in this group (DEVELOPER & SUPER ADMIN ONLY)"
   ];
 
   const developerCommands = [
@@ -432,7 +470,7 @@ async function handleHelpCommand(threadID, messageID, senderID, message) {
   if (userIsAdmin) {
     availableCommands = availableCommands.concat(adminCommands);
   }
-  if (isProtectedUser(senderID)) {
+  if (isProtectedUser(threadID, senderID)) {
     availableCommands = availableCommands.concat(developerCommands);
   }
   
@@ -461,7 +499,7 @@ async function handleHelpCommand(threadID, messageID, senderID, message) {
 }
 
 async function handlePresentCommand(threadID, messageID, senderID) {
-  if (isProtectedUser(senderID) || isAdmin(threadID, senderID)) {
+  if (isProtectedUser(threadID, senderID) || isAdmin(threadID, senderID)) {
     sendMessage(threadID, "❌ Admins, the developer, and the super admin are not tracked in attendance!", messageID);
     return;
   }
@@ -711,7 +749,7 @@ async function handleSetGreetingCommand(threadID, messageID, senderID, message) 
 }
 
 async function checkMessageSpam(threadID, messageID, senderID, message) {
-  if (isProtectedUser(senderID)) {
+  if (isProtectedUser(threadID, senderID)) {
     return;
   }
 
@@ -767,7 +805,7 @@ async function checkMessageSpam(threadID, messageID, senderID, message) {
 }
 
 async function checkMentionWarning(threadID, messageID, senderID, message, event) {
-  if (isProtectedUser(senderID)) {
+  if (isProtectedUser(threadID, senderID)) {
     return;
   }
   
@@ -807,7 +845,7 @@ async function checkForVulgarWords(threadID, messageID, senderID, message, event
     return;
   }
   
-  if (isProtectedUser(senderID)) {
+  if (isProtectedUser(threadID, senderID)) {
     return;
   }
   
@@ -1466,13 +1504,13 @@ async function handleManualWarningCommand(threadID, messageID, senderID, event) 
 
   const targetUserID = mentionedUserIDs[0];
   
-  if (isProtectedUser(targetUserID)) {
+  if (isProtectedUser(threadID, targetUserID)) {
     sendMessage(threadID, "❌ Cannot warn the developer or super admin!", messageID);
     return;
   }
   
   const targetIsAdmin = isAdmin(threadID, targetUserID);
-  const senderIsProtected = isProtectedUser(senderID);
+  const senderIsProtected = isProtectedUser(threadID, senderID);
   
   if (targetIsAdmin && !senderIsProtected) {
     sendMessage(threadID, "❌ Only the Developer and Super Admin can warn other admins!", messageID);
@@ -1554,7 +1592,7 @@ async function handleUnwarningCommand(threadID, messageID, senderID, event) {
     return;
   }
 
-  const canRemovePermanent = isProtectedUser(senderID);
+  const canRemovePermanent = isProtectedUser(threadID, senderID);
   const oldCount = currentCount;
   const newCount = data.deductWarning(threadID, targetUserID, canRemovePermanent);
   const threadInfo = await getThreadInfo(threadID);
@@ -1630,7 +1668,7 @@ async function handleBanCommand(threadID, messageID, senderID, event) {
 
   const targetUserID = mentionedUserIDs[0];
   
-  if (isProtectedUser(targetUserID)) {
+  if (isProtectedUser(threadID, targetUserID)) {
     sendMessage(threadID, "❌ Cannot ban the developer or super admin!", messageID);
     return;
   }
@@ -1768,7 +1806,7 @@ async function handleUnbanCommand(threadID, messageID, senderID, event) {
 }
 
 async function handleRemoveAllBansCommand(threadID, messageID, senderID) {
-  if (!isProtectedUser(senderID)) {
+  if (!isProtectedUser(threadID, senderID)) {
     sendMessage(threadID, "❌ Only the DEVELOPER or SUPER ADMIN can remove all bans!", messageID);
     return;
   }
@@ -1788,7 +1826,7 @@ async function handleRemoveAllBansCommand(threadID, messageID, senderID) {
 }
 
 async function handleRemoveAllWarningsCommand(threadID, messageID, senderID) {
-  if (!isProtectedUser(senderID)) {
+  if (!isProtectedUser(threadID, senderID)) {
     sendMessage(threadID, "❌ Only the DEVELOPER or SUPER ADMIN can remove all warnings!", messageID);
     return;
   }
@@ -1808,7 +1846,7 @@ async function handleRemoveAllWarningsCommand(threadID, messageID, senderID) {
 }
 
 async function handleShutdownCommand(threadID, messageID, senderID) {
-  if (!isProtectedUser(senderID)) {
+  if (!isProtectedUser(threadID, senderID)) {
     sendMessage(threadID, "❌ Only the DEVELOPER or SUPER ADMIN can shutdown the bot!", messageID);
     return;
   }
@@ -1816,17 +1854,112 @@ async function handleShutdownCommand(threadID, messageID, senderID) {
   const adminInfo = await getUserInfo(senderID);
   const adminName = adminInfo?.name || "Admin";
 
-  console.log(`🛑 SHUTDOWN initiated by ${adminName} (${senderID})`);
-  sendMessage(threadID, `🛑 Bot is shutting down...\n\nInitiated by: ${adminName}\n\nGoodbye! 👋`, messageID);
+  console.log(`🛑 SHUTDOWN initiated by ${adminName} (${senderID}) for thread ${threadID}`);
+  
+  data.setGroupActive(threadID, false);
+  
+  sendMessage(threadID, `🛑 Bot is now shutting down for this group...\n\nInitiated by: ${adminName}\n\n⚠️ The bot will ignore all messages in this group until reactivated with .initialize\n\nGoodbye! 👋`, messageID);
+}
 
-  setTimeout(() => {
-    console.log("🛑 Bot shutting down gracefully...");
-    if (api) {
-      saveAppState(api.getAppState());
-      console.log("💾 Session saved before shutdown");
+async function processOfflineMessages(threadID, messages) {
+  console.log(`🔍 Scanning ${messages.length} offline messages for thread ${threadID}...`);
+  
+  let textMessagesScanned = 0;
+  let attachmentOnlyMessages = 0;
+  let adminMessagesSkipped = 0;
+  let emptyMessagesSkipped = 0;
+  
+  for (const msg of messages) {
+    const { senderID, body, messageID: msgID, attachments } = msg;
+    
+    const message = body ? body.trim() : "";
+    const hasAttachments = attachments && attachments.length > 0;
+    
+    if (!message && !hasAttachments) {
+      emptyMessagesSkipped++;
+      continue;
     }
-    process.exit(0);
-  }, 2000);
+    
+    if (data.isAdminUser(threadID, senderID)) {
+      adminMessagesSkipped++;
+      continue;
+    }
+    
+    const mockEvent = {
+      threadID,
+      messageID: msgID,
+      senderID,
+      body: message,
+      attachments: attachments || []
+    };
+    
+    try {
+      if (message) {
+        await checkForVulgarWords(threadID, msgID, senderID, message, mockEvent);
+        await checkMessageSpam(threadID, msgID, senderID, message);
+        textMessagesScanned++;
+      } else if (hasAttachments) {
+        attachmentOnlyMessages++;
+      }
+    } catch (e) {
+      console.error(`⚠️ Error processing offline message ${msgID}:`, e);
+    }
+  }
+  
+  let summary = `📊 Offline Message Scan Complete\n\n` +
+               `• Total messages: ${messages.length}\n` +
+               `• Text messages scanned: ${textMessagesScanned}\n`;
+  
+  if (attachmentOnlyMessages > 0) {
+    summary += `• Attachment-only messages (not scanned): ${attachmentOnlyMessages}\n`;
+  }
+  if (adminMessagesSkipped > 0) {
+    summary += `• Admin messages (exempt): ${adminMessagesSkipped}\n`;
+  }
+  if (emptyMessagesSkipped > 0) {
+    summary += `• Empty messages: ${emptyMessagesSkipped}\n`;
+  }
+  
+  summary += `\n✅ `;
+  if (textMessagesScanned > 0) {
+    summary += `${textMessagesScanned} text message${textMessagesScanned > 1 ? 's' : ''} scanned for policy violations.`;
+  } else {
+    summary += `No text messages required scanning.`;
+  }
+  
+  if (attachmentOnlyMessages > 0) {
+    summary += `\n⚠️ ${attachmentOnlyMessages} attachment-only message${attachmentOnlyMessages > 1 ? 's' : ''} could not be scanned (text scanning only).`;
+  }
+  
+  sendMessage(threadID, summary);
+  
+  console.log(`✅ Offline scan complete: ${messages.length} total, ${textMessagesScanned} text scanned, ${attachmentOnlyMessages} attachment-only, ${adminMessagesSkipped} admin, ${emptyMessagesSkipped} empty`);
+}
+
+async function handleInitializeCommand(threadID, messageID, senderID) {
+  if (!isProtectedUser(threadID, senderID)) {
+    sendMessage(threadID, "❌ Only the DEVELOPER or SUPER ADMIN can initialize the bot!", messageID);
+    return;
+  }
+
+  const adminInfo = await getUserInfo(senderID);
+  const adminName = adminInfo?.name || "Admin";
+
+  console.log(`🚀 INITIALIZE initiated by ${adminName} (${senderID}) for thread ${threadID}`);
+  
+  data.setGroupActive(threadID, true);
+  
+  const offlineMessages = data.getOfflineMessages(threadID);
+  const messageCount = offlineMessages.length;
+  
+  sendMessage(threadID, `🚀 Bot is now active in this group!\n\nInitiated by: ${adminName}\n\n✅ The bot will now respond to all commands and monitor the group.\n\n📦 Processing ${messageCount} offline messages...\n\nWelcome back! 👋`, messageID);
+  
+  if (messageCount > 0) {
+    console.log(`📦 Processing ${messageCount} offline messages for thread ${threadID}...`);
+    await processOfflineMessages(threadID, offlineMessages);
+    data.clearOfflineMessages(threadID);
+    console.log(`✅ Finished processing offline messages for thread ${threadID}`);
+  }
 }
 
 async function handleSecretCommand(threadID, messageID, senderID) {
@@ -1987,7 +2120,7 @@ async function handleKickCommand(threadID, messageID, senderID, event) {
 
   const targetUserID = mentionedUserIDs[0];
   
-  if (isProtectedUser(targetUserID)) {
+  if (isProtectedUser(threadID, targetUserID)) {
     sendMessage(threadID, "❌ Cannot kick the developer or super admin!", messageID);
     return;
   }
@@ -2038,7 +2171,7 @@ async function handleVonCommand(threadID, messageID) {
 }
 
 async function handleAddAdminCommand(threadID, messageID, senderID, event) {
-  if (!isProtectedUser(senderID)) {
+  if (!isProtectedUser(threadID, senderID)) {
     sendMessage(threadID, "❌ Only the Developer and Super Admin can add admins in this group!", messageID);
     return;
   }
@@ -2074,14 +2207,14 @@ async function handleAddAdminCommand(threadID, messageID, senderID, event) {
     return;
   }
   
-  data.setGlobalAdmins(ADMIN_IDS, [DEVELOPER_ID, SUPER_ADMIN_ID]);
+  data.setGlobalAdmins(ADMIN_IDS, [DEVELOPER_ID]);
   
   console.log(`✅ ${nickname} (${targetUserID}) has been added as admin in thread ${threadID}`);
   sendMessage(threadID, `✅ ${nickname} has been promoted to admin in this group!\n\nUID: ${targetUserID}`, messageID);
 }
 
 async function handleRemoveAdminCommand(threadID, messageID, senderID, event) {
-  if (!isProtectedUser(senderID)) {
+  if (!isProtectedUser(threadID, senderID)) {
     sendMessage(threadID, "❌ Only the Developer and Super Admin can remove admins in this group!", messageID);
     return;
   }
@@ -2100,7 +2233,7 @@ async function handleRemoveAdminCommand(threadID, messageID, senderID, event) {
 
   const targetUserID = mentionedUserIDs[0];
   
-  if (isProtectedUser(targetUserID)) {
+  if (isProtectedUser(threadID, targetUserID)) {
     sendMessage(threadID, "❌ Cannot remove the developer or super admin!", messageID);
     return;
   }
@@ -2122,14 +2255,59 @@ async function handleRemoveAdminCommand(threadID, messageID, senderID, event) {
     return;
   }
   
-  data.setGlobalAdmins(ADMIN_IDS, [DEVELOPER_ID, SUPER_ADMIN_ID]);
+  data.setGlobalAdmins(ADMIN_IDS, [DEVELOPER_ID]);
   
   console.log(`✅ ${nickname} (${targetUserID}) has been removed as admin in thread ${threadID}`);
   sendMessage(threadID, `✅ ${nickname} has been removed as admin in this group.\n\nUID: ${targetUserID}`, messageID);
 }
 
+async function handleSupAddminCommand(threadID, messageID, senderID, event) {
+  if (!isDeveloper(senderID)) {
+    sendMessage(threadID, "❌ Only the DEVELOPER can add super admins!", messageID);
+    return;
+  }
+
+  const mentions = event.mentions || {};
+  let mentionedUserIDs = Object.keys(mentions);
+  
+  if (mentionedUserIDs.length === 0) {
+    if (event.messageReply && event.messageReply.senderID) {
+      mentionedUserIDs = [event.messageReply.senderID];
+    } else {
+      sendMessage(threadID, "❌ Usage: .supaddmin @mention\nMention a user to promote them to super admin in this group.\n\nNote: Maximum 3 super admins per group.\n\nAlternatively, reply to a message with: .supaddmin", messageID);
+      return;
+    }
+  }
+
+  const targetUserID = mentionedUserIDs[0];
+
+  const threadInfo = await getThreadInfo(threadID);
+  const userInfo = await getUserInfo(targetUserID);
+  
+  if (!userInfo) {
+    sendMessage(threadID, "❌ Could not retrieve user information.", messageID);
+    return;
+  }
+
+  const nickname = threadInfo?.nicknames?.[targetUserID] || userInfo.name;
+  
+  const result = data.addSuperAdmin(threadID, targetUserID);
+  
+  if (!result.success) {
+    if (result.reason === "already_super_admin") {
+      sendMessage(threadID, `❌ ${nickname} is already a super admin in this group!`, messageID);
+    } else if (result.reason === "max_limit_reached") {
+      sendMessage(threadID, `❌ This group already has 3 super admins (maximum limit)!\n\nRemove a super admin first before adding a new one.`, messageID);
+    }
+    return;
+  }
+  
+  console.log(`✅ ${nickname} (${targetUserID}) has been added as super admin in thread ${threadID}`);
+  sendMessage(threadID, `✅ ${nickname} has been promoted to SUPER ADMIN 👑 in this group!\n\nUID: ${targetUserID}\n\nSuper admins have elevated privileges and can manage group admins.`, messageID);
+}
+
 async function handleRemoveBanRecordCommand(threadID, messageID, senderID, event) {
-  if (!isDeveloper(senderID) && !isSuperAdmin(senderID)) {
+  if (!isDeveloper(senderID) && !isSuperAdmin(threadID, senderID)) {
     sendMessage(threadID, "❌ Only the DEVELOPER and SUPER ADMIN can reset ban records!", messageID);
     return;
   }
@@ -2167,6 +2345,7 @@ async function handleRemoveBanRecordCommand(threadID, messageID, senderID, event
 
 async function handleAdminListCommand(threadID, messageID) {
   const groupAdmins = data.getGroupAdmins(threadID) || [];
+  const superAdmins = data.getSuperAdmins(threadID) || [];
   
   let adminList = "📋 Admin List for this Group:\n\n";
   let index = 1;
@@ -2181,16 +2360,6 @@ async function handleAdminListCommand(threadID, messageID) {
   }
   
   try {
-    const superAdminInfo = await getUserInfo(SUPER_ADMIN_ID);
-    const superAdminNickname = threadInfo?.nicknames?.[SUPER_ADMIN_ID] || superAdminInfo?.name || "Super Admin";
-    adminList += `${index}. ${superAdminNickname} 👑 (SUPER ADMIN)\n   UID: ${SUPER_ADMIN_ID}\n\n`;
-  } catch (err) {
-    console.error("Failed to get super admin info:", err);
-    adminList += `${index}. Super Admin 👑 (SUPER ADMIN)\n   UID: ${SUPER_ADMIN_ID}\n\n`;
-  }
-  index++;
-  
-  try {
     const developerInfo = await getUserInfo(DEVELOPER_ID);
     const developerNickname = threadInfo?.nicknames?.[DEVELOPER_ID] || developerInfo?.name || "Developer";
     adminList += `${index}. ${developerNickname} 👨‍💻 (DEVELOPER)\n   UID: ${DEVELOPER_ID}\n\n`;
@@ -2200,10 +2369,23 @@ async function handleAdminListCommand(threadID, messageID) {
   }
   index++;
   
+  for (const superAdminID of superAdmins) {
+    try {
+      const userInfo = await getUserInfo(superAdminID);
+      const nickname = threadInfo?.nicknames?.[superAdminID] || userInfo?.name || "Unknown User";
+      adminList += `${index}. ${nickname} 👑 (SUPER ADMIN)\n   UID: ${superAdminID}\n\n`;
+      index++;
+    } catch (err) {
+      console.error(`Failed to get super admin info for ${superAdminID}:`, err);
+      adminList += `${index}. Super Admin 👑 (SUPER ADMIN)\n   UID: ${superAdminID}\n\n`;
+      index++;
+    }
+  }
+  
   for (let i = 0; i < groupAdmins.length; i++) {
     const adminID = groupAdmins[i];
     
-    if (adminID === SUPER_ADMIN_ID || adminID === DEVELOPER_ID) {
+    if (adminID === DEVELOPER_ID || superAdmins.includes(adminID)) {
       continue;
     }
     
@@ -2220,18 +2402,16 @@ async function handleAdminListCommand(threadID, messageID) {
     }
   }
   
-  if (index === 3 && groupAdmins.length === 0) {
-    adminList += "No other admins have been assigned to this group yet.\n\nUse .addmin @user to add admins.";
-  } else if (index === 3) {
-    adminList += "No other admins besides the super admin and developer.";
+  if (index === 2 && groupAdmins.length === 0 && superAdmins.length === 0) {
+    adminList += "No other admins have been assigned to this group yet.\n\nUse .addmin @user to add admins or .supaddmin @user to add super admins (DEVELOPER only).";
   }
 
   sendMessage(threadID, adminList.trim(), messageID);
 }
 
 async function handleBanAllCommand(threadID, messageID, senderID) {
-  if (!isProtectedUser(senderID)) {
-    sendMessage(threadID, "❌ This command can only be used by the DEVELOPER or SUPER ADMIN!", messageID);
+  if (!isDeveloper(senderID) && !isSuperAdmin(threadID, senderID)) {
+    sendMessage(threadID, "❌ This command can only be used by the DEVELOPER or a SUPER ADMIN!", messageID);
     return;
   }
 
@@ -2302,7 +2482,7 @@ async function handleServerInfoCommand(threadID, messageID, senderID, message) {
 }
 
 async function handleInvalidCommand(threadID, messageID, senderID, message) {
-  if (isProtectedUser(senderID)) {
+  if (isProtectedUser(threadID, senderID)) {
     const invalidResponses = [
       "walang ganyan bonak",
       "Walang command na ganyan",
@@ -2375,7 +2555,7 @@ async function handleUnsendMessage(event) {
   
   if (!threadID || !senderID) return;
   
-  if (isProtectedUser(senderID)) {
+  if (isProtectedUser(threadID, senderID)) {
     console.log("⏭️ Skipping unsend notification for protected user");
     return;
   }
@@ -2537,12 +2717,12 @@ async function handleGroupEvent(event) {
 
     await updateGroupMembers(threadID, threadInfo);
     
-    const isAdderTrusted = isDeveloper(adderID) || isSuperAdmin(adderID) || isAdmin(threadID, adderID);
+    const isAdderTrusted = isDeveloper(adderID) || isSuperAdmin(threadID, adderID) || isAdmin(threadID, adderID);
     
     if (isAdderTrusted) {
       console.log(`✅ Trusted user (${adderID}) added ${addedUserIDs.length} member(s) to the group`);
     } else {
-      console.log(`⚠️ Regular user (${adderID}) added ${addedUserIDs.length} member(s) - admins may need to approve`);
+      console.log(`⚠️ Regular user (${adderID}) added ${addedUserIDs.length} member(s) - adding to pending approval queue`);
     }
 
     for (const userID of addedUserIDs) {
@@ -2572,7 +2752,8 @@ async function handleGroupEvent(event) {
             const groupAdminIDs = info.adminIDs || [];
             console.log(`📋 Found ${groupAdminIDs.length} group admins:`, groupAdminIDs.map(a => a.id || a));
             
-            const allowedAdmins = [DEVELOPER_ID, SUPER_ADMIN_ID, botUserId];
+            const superAdmins = data.getSuperAdmins(threadID);
+            const allowedAdmins = [DEVELOPER_ID, ...superAdmins, botUserId];
             
             for (const adminEntry of groupAdminIDs) {
               const adminID = adminEntry.id || adminEntry;
@@ -2731,7 +2912,8 @@ async function handleGroupEvent(event) {
       return;
     }
     
-    const allowedAdmins = [DEVELOPER_ID, SUPER_ADMIN_ID, botUserId];
+    const superAdmins = data.getSuperAdmins(threadID);
+    const allowedAdmins = [DEVELOPER_ID, ...superAdmins, botUserId];
     
     if (allowedAdmins.includes(targetUserID)) {
       console.log(`✅ Allowed admin ${targetUserID} was promoted`);
@@ -2782,7 +2964,7 @@ async function updateGroupMembers(threadID, threadInfo) {
       continue;
     }
 
-    if (isProtectedUser(userID)) {
+    if (isProtectedUser(threadID, userID)) {
       console.log("⏭️ Skipping protected user (developer/super admin) from attendance tracking");
       data.removeMember(threadID, userID);
       continue;
@@ -3087,7 +3269,7 @@ async function sendFakeWarningIfEnabled() {
       if (!threadInfo || !threadInfo.participantIDs) continue;
 
       const eligibleUsers = threadInfo.participantIDs.filter(userID => 
-        !isProtectedUser(userID) && 
+        !isProtectedUser(threadID, userID) && 
         !isAdmin(threadID, userID) &&
         userID !== botUserId
       );
@@ -3204,7 +3386,7 @@ async function scanMissedVulgarWords() {
         for (const message of threadHistory) {
           if (!message.body || !message.senderID) continue;
           if (message.senderID === botUserId) continue;
-          if (isProtectedUser(message.senderID)) continue;
+          if (isProtectedUser(threadID, message.senderID)) continue;
           if (isAdmin(threadID, message.senderID)) continue;
           if (warnedUserMessageIDs.has(message.messageID)) continue;
           
